@@ -36,8 +36,9 @@ class Dailation:
         self._layers = self.__build__layers(self.orig, desired_shape)
         logging.info(f"Build {len(self._layers)} Layers")
 
-
-    def __select_item_(self , indecies: Union[Tuple[int, int], int]) -> Tuple[Tuple[int,int],Tuple[int,int]]:
+    def __select_item_index(
+        self, indecies: Union[Tuple[int, int], int]
+    ) -> Tuple[Tuple[int, int], Tuple[int, int]]:
         match indecies:
             case int(idx):
                 x_idx = idx % self.pool_shape[0]
@@ -53,28 +54,31 @@ class Dailation:
                 # TODO: add type error message
                 raise TypeError("")
 
-
     def __getitem__(self, indecies: Union[Tuple[int, int], int]) -> tf.Tensor:
         (x_start, x_end), (
             y_start,
             y_end,
-        ) = self.__select_item_(indecies)
+        ) = self.__select_item_index(indecies)
         logging.debug(f"Getting [:,{x_start}:{x_end},{y_start}:{y_end},:]")
-        return self._layers[self._current_layer][
-            :, x_start:x_end, y_start:y_end, :
-        ]
+        return self._layers[self._current_layer][:, x_start:x_end, y_start:y_end, :]
 
+    def __foward(self, indecies: Union[Tuple[int, int], int]):
+        pass
 
-    def move(self, indecies: Union[Tuple[int, int], int]):
-        (x_start, x_end), (
-            y_start,
-            y_end,
-        ) = self.__select_item_(indecies)
-        
+    def __backward(self, indecies: Union[Tuple[int, int], int]):
+        pass
 
+    def move(self, action: Action):
+        match action._type:
+            case ActionType.Backward:
+                self.__foward(action._value)
+            case ActionType.Foward:
+                self.__backward(action._value)
 
     @classmethod
-    def __convert_index_to_current_layer(cls, x: int, y: int, _pool, _current) -> Tuple[Tuple[int,int],Tuple[int,int]]:
+    def __convert_index_to_current_layer(
+        cls, x: int, y: int, _pool, _current
+    ) -> Tuple[Tuple[int, int], Tuple[int, int]]:
         x = x * _pool[0] + _current[0]
         y = y * _pool[1] + _current[1]
         x_end = x + _pool[0]
