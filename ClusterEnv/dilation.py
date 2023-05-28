@@ -58,8 +58,8 @@ class Dailation:
                 raise TypeError("")
 
     def __getitem__(self, indecies: Tuple[int, int]) -> tf.Tensor:
-        x  = indecies[0] + self._position_in_layer[0]
-        y  = indecies[1] + self._position_in_layer[1]
+        x = indecies[0] + self._position_in_layer[0]
+        y = indecies[1] + self._position_in_layer[1]
         logging.debug(f"Getting [:, {x}, {y}, :] from layer {self._current_layer} ")
         return self._layers[self._current_layer][:, x, y, :]
 
@@ -69,18 +69,22 @@ class Dailation:
         self._position_in_layer[0] = x * self.pool_shape[0]
         self._position_in_layer[1] = y * self.pool_shape[1]
         self._current_layer -= 1
-        logging.debug(f"Moving Foward from layer: {org_layer} index: {indecies} to layer: {self._current_layer} index:{self._position_in_layer}")
+        logging.debug(
+            f"Moving Foward from layer: {org_layer} index: {indecies} to layer: {self._current_layer} index:{self._position_in_layer}"
+        )
 
     def __backward(self):
         org_layer = self._current_layer
-        self._position_in_layer[0] = 0 ### x // self.pool_shape[0]
-        self._position_in_layer[1] = 0 ### y // self.pool_shape[1]
+        self._position_in_layer[0] = 0  ### x // self.pool_shape[0]
+        self._position_in_layer[1] = 0  ### y // self.pool_shape[1]
         self._current_layer += 1
-        logging.debug(f"Moving Backward from layer: {org_layer} layer: {self._current_layer}")
+        logging.debug(
+            f"Moving Backward from layer: {org_layer} layer: {self._current_layer}"
+        )
 
     def move(self, action: Action):
         match action._type:
-            case ActionType.Foward  if self._current_layer > 0:
+            case ActionType.Foward if self._current_layer > 0:
                 self.__foward(action._value)
             case ActionType.Backward if self._current_layer < len(self._layers):
                 self.__backward()
