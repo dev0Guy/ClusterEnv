@@ -12,8 +12,8 @@ class ActionType(enum.Enum):
 
 @define
 class Action:
-    _value: Optional[Tuple[int, int]]
     _type: ActionType
+    _value: Optional[Tuple[int, int]] = field(default=None)
 
 
 @define
@@ -21,7 +21,9 @@ class Dailation:
     orig: tf.Tensor  # size of 4
     pool_shape: tf.TensorShape  # size of 2
     _layers: List[tf.Tensor] = field(init=False)
-    _current_layer: int = field(init=False, default=0)
+    _current_layer: int = field(
+        init=False, default=0
+    )  # TODO: make property and chack its not negative
     _position_in_layer: Tuple[int, int] = field(init=False, default=[0, 0])
 
     def __attrs_post_init__(self):
@@ -34,6 +36,7 @@ class Dailation:
         self.orig: tf.Tensor = self.__pad_to_fit_pool(self.orig, desired_shape)
         logging.info(f"Padded origin from {_shape} into {self.orig.shape}")
         self._layers = self.__build__layers(self.orig, desired_shape)
+        self._current_layer = len(self._layers) - 1
         logging.info(f"Build {len(self._layers)} Layers")
 
     def __select_item_index(
@@ -54,26 +57,33 @@ class Dailation:
                 # TODO: add type error message
                 raise TypeError("")
 
-    def __getitem__(self, indecies: Union[Tuple[int, int], int]) -> tf.Tensor:
-        (x_start, x_end), (
-            y_start,
-            y_end,
-        ) = self.__select_item_index(indecies)
-        logging.debug(f"Getting [:,{x_start}:{x_end},{y_start}:{y_end},:]")
-        return self._layers[self._current_layer][:, x_start:x_end, y_start:y_end, :]
+    def __getitem__(self, indecies: Tuple[int, int]) -> tf.Tensor:
+        x  = indecies[0] + self._position_in_layer[0]
+        y  = indecies[1] + self._position_in_layer[1]
+        logging.debug(f"Getting [:, {x}, {y}, :] from layer {self._current_layer} ")
+        return self._layers[self._current_layer][:, x, y, :]
 
     def __foward(self, indecies: Union[Tuple[int, int], int]):
-        pass
+        x, y = indecies
+        org_layer = self._current_layer
+        self._position_in_layer[0] = x * self.pool_shape[0]
+        self._position_in_layer[1] = y * self.pool_shape[1]
+        self._current_layer -= 1
+        logging.debug(f"Moving Foward from layer: {org_layer} index: {indecies} to layer: {self._current_layer} index:{self._position_in_layer}")
 
-    def __backward(self, indecies: Union[Tuple[int, int], int]):
-        pass
+    def __backward(self):
+        org_layer = self._current_layer
+        self._position_in_layer[0] = 0 ### x // self.pool_shape[0]
+        self._position_in_layer[1] = 0 ### y // self.pool_shape[1]
+        self._current_layer += 1
+        logging.debug(f"Moving Backward from layer: {org_layer} layer: {self._current_layer}")
 
     def move(self, action: Action):
         match action._type:
-            case ActionType.Backward:
+            case ActionType.Foward  if self._current_layer > 0:
                 self.__foward(action._value)
-            case ActionType.Foward:
-                self.__backward(action._value)
+            case ActionType.Backward if self._current_layer < len(self._layers):
+                self.__backward()
 
     @classmethod
     def __convert_index_to_current_layer(
