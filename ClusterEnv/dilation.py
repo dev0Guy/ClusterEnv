@@ -21,18 +21,9 @@ class Dailation:
     orig: tf.Tensor  # size of 4
     pool_shape: tf.TensorShape  # size of 2
     _layers: List[tf.Tensor] = field(init=False)
+    _current_layer: int = field(init=False, default=0)
+    _position_in_layer: Tuple[int, int] = field(init=False, default=[0, 0])
 
-    def __getitem__(self, indecies: Union[Tuple[int,int],int]) -> tf.Tensor:
-        match indecies:
-            case int(idx):
-                pass
-            case int(x_idx,y_idx):
-                pass
-            case _:
-                # TODO: add type error message
-                raise TypeError("")
-        
-        
     def __attrs_post_init__(self):
         _shape = self.orig.shape
         num_examples, num_channels = tf.constant([self.orig.shape[0]]), tf.constant(
@@ -44,6 +35,51 @@ class Dailation:
         logging.info(f"Padded origin from {_shape} into {self.orig.shape}")
         self._layers = self.__build__layers(self.orig, desired_shape)
         logging.info(f"Build {len(self._layers)} Layers")
+
+
+    def __select_item_(self , indecies: Union[Tuple[int, int], int]) -> Tuple[Tuple[int,int],Tuple[int,int]]:
+        match indecies:
+            case int(idx):
+                x_idx = idx % self.pool_shape[0]
+                y_idx = idx // self.pool_shape[0]
+                return self.__convert_index_to_current_layer(
+                    x_idx, y_idx, self.pool_shape, self._position_in_layer
+                )
+            case int(x_idx, y_idx):
+                return self.__convert_index_to_current_layer(
+                    x_idx, y_idx, self.pool_shape, self._position_in_layer
+                )
+            case _:
+                # TODO: add type error message
+                raise TypeError("")
+
+
+    def __getitem__(self, indecies: Union[Tuple[int, int], int]) -> tf.Tensor:
+        (x_start, x_end), (
+            y_start,
+            y_end,
+        ) = self.__select_item_(indecies)
+        logging.debug(f"Getting [:,{x_start}:{x_end},{y_start}:{y_end},:]")
+        return self._layers[self._current_layer][
+            :, x_start:x_end, y_start:y_end, :
+        ]
+
+
+    def move(self, indecies: Union[Tuple[int, int], int]):
+        (x_start, x_end), (
+            y_start,
+            y_end,
+        ) = self.__select_item_(indecies)
+        
+
+
+    @classmethod
+    def __convert_index_to_current_layer(cls, x: int, y: int, _pool, _current) -> Tuple[Tuple[int,int],Tuple[int,int]]:
+        x = x * _pool[0] + _current[0]
+        y = y * _pool[1] + _current[1]
+        x_end = x + _pool[0]
+        y_end = y + _pool[1]
+        return (x, x_end), (y, y_end)
 
     @classmethod
     def __pad_to_fit_pool(cls, inp: tf.Tensor, _pool: tf.TensorShape):
