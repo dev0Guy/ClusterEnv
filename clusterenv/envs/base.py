@@ -9,10 +9,10 @@ import enum
 
 class JobStatus(enum.IntEnum):
     """Enumeration representing the status of a job in a computing system."""
-    NOT_ARRIVED = enum.auto()
-    WAITTING = enum.auto()
-    RUNNING = enum.auto()
-    COMPLETE = enum.auto()
+    NOT_ARRIVED = 0
+    WAITTING = 1
+    RUNNING = 2
+    COMPLETE = 3
 
 @dataclass
 class Jobs:
@@ -29,7 +29,8 @@ class Jobs:
         return self._status
     def __post_init__(self):
         self._status = np.zeros(self.arrival.shape,dtype=JobStatus)
-        self._length = np.zeros(self.arrival.shape, dtype=np.uint32)
+        _zero_idx: npt.NDArray[np.uint32] = (self.usage == 0).argmax(axis=-1)
+        self._length = np.max(np.where(_zero_idx > 0,_zero_idx, len(self.usage[0])),axis=1)
     def __getitem__(self, idx: int) -> tuple[np.uint32, np.float64, np.uint32]:
         return self.arrival[idx], self.usage[idx], self._status[idx]
     def __setitem__(self, idx: int, status: JobStatus, usage_fill: float = -1):
@@ -37,8 +38,6 @@ class Jobs:
         self.usage[idx] = usage_fill
     def __len__(self) -> int:
         return len(self.arrival)
-
-
 
 @dataclass
 class ClusterObject:
@@ -57,13 +56,11 @@ class ClusterObject:
         return len(self.nodes)
     @property
     def usage(self) -> npt.NDArray[np.float64]:
-        return self._usage
+        return self._usage.copy()
     @property
     def queue(self) -> npt.NDArray[np.float64]:
-        idx: npt.NDArray[np.bool_] = np.logical_or(self.jobs.status == JobStatus.WAITTING ,self.jobs.status == JobStatus.RUNNING)
-        print((self.jobs.status == JobStatus.WAITTING).shape,(self.jobs.status == JobStatus.RUNNING).shape)
-        print(idx.shape, self.jobs.usage.shape)
-        return self.jobs.usage[idx]
+        # idx: npt.NDArray[np.bool_] = np.logical_or(self.jobs.status == JobStatus.WAITTING ,self.jobs.status == JobStatus.RUNNING)
+        return self.jobs.usage.copy()
     def all_jobs_complete(self) -> bool:
         return bool(np.all(self.jobs.status == JobStatus.COMPLETE))
     def __post_init__(self):
@@ -71,12 +68,24 @@ class ClusterObject:
         self._run_time = np.zeros(len(self.jobs), dtype=np.uint32)
         self._usage  = np.zeros(self.nodes.shape)
         self.jobs.status[self._time == self.jobs.arrival] = JobStatus.WAITTING
+        logging.info(f"Created cluster with; nodes: {self.n_nodes}, jobs: {self.n_jobs}")
+        logging.info(f"Jobs Arrival Time: {self.jobs.arrival}")
+        logging.info(f"Jobs Length Time: {self.jobs.length}")
     def tick(self):
         """Foward cluster time by one second."""
+        self._run_time += (self.jobs.status == JobStatus.RUNNING).astype(np.uint32)
         self._time += 1
-        self.jobs.status[self._run_time == self.jobs.length] = JobStatus.COMPLETE
-        self.jobs.usage[self.jobs.status == JobStatus.COMPLETE] = self._empty_job_cell_val
-        self.jobs.status[self._time == self.jobs.arrival] = JobStatus.WAITTING
+        # create index
+        iteration_complete_jobs: npt.NDArray[np.bool_] = self._run_time == self.jobs.length
+        arrived_jobs: npt.NDArray[np.bool_] = self.jobs.arrival == self._time
+        logging.info(f"After tick time: {self._time}")
+        # logging
+        logging.info(f"Iteration completed jobs: {np.where(iteration_complete_jobs)}")
+        logging.info(f"Iteration arrived jobs: {np.where(arrived_jobs)}")
+        # set values
+        self.jobs.status[iteration_complete_jobs] = JobStatus.COMPLETE
+        self.jobs.usage[iteration_complete_jobs] = self._empty_job_cell_val
+        self.jobs.status[arrived_jobs] = JobStatus.WAITTING
         # move usage time by one
         self._usage = np.roll(self._usage, shift=-1,axis=-1)
         self._usage[:,:,-1] = 0
@@ -94,6 +103,7 @@ class ClusterObject:
             bool: Able to schedule job to index.
         """
         _, job_usage, job_status = self.jobs[j_idx]
+        logging.info(f"Try to schedule job {j_idx} with status {JobStatus(job_status).name}")
         match job_status:
             case JobStatus.WAITTING:
                 job_can_be_schedule: bool = False

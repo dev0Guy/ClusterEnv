@@ -11,13 +11,14 @@ import numpy as np
 import logging
 import math
 
+
 @dataclass
 class DistribConfig:
     options: list[Any]
     probability: list[float]
 
-DEFUALT_ARRIVAL_FUNC: Callable = lambda: DistribConfig(options=[0], probability=[1])
-DEFUALT_LENGTH_FUNC: Callable = lambda: DistribConfig(options=[1,5], probability=[.8,.2])
+DEFUALT_ARRIVAL_FUNC: Callable = lambda: DistribConfig(options=[.0,.2,.3], probability=[.7,.2,.1])
+DEFUALT_LENGTH_FUNC: Callable = lambda: DistribConfig(options=[.0,.2,.3], probability=[.7,.2,.1])
 DEFUALT_USAGE_FUNC: Callable = lambda: DistribConfig(options=[0.1,0.5,1], probability=[.7,.2,.1])
 
 @dataclass
@@ -29,13 +30,18 @@ class ClusterGenerator:
     arrival: DistribConfig = field(default_factory=DEFUALT_ARRIVAL_FUNC)
     length: DistribConfig = field(default_factory=DEFUALT_LENGTH_FUNC)
     usage: DistribConfig = field(default_factory=DEFUALT_USAGE_FUNC)
+    max_node_usage: float = field(default=255.0)
+
     def __call__(self, *args: Any, **kwds: Any) -> ClusterObject:
-        arrival_time: npt.NDArray[np.uint32] = np.random.choice(self.arrival.options, size=(self.jobs), p=self.arrival.probability)
-        job_length: npt.NDArray[np.int32] = np.random.choice(self.length.options, size=(self.jobs), p=self.length.probability)
-        usage: npt.NDArray[np.float64] = np.random.choice(self.usage.options, size=(self.jobs), p=self.usage.probability)
+        logging.info(f"Generating Cluster with;  nodes: {self.nodes}, jobs: {self.jobs}, max node usage: {self.max_node_usage}")
+        arrival_time: npt.NDArray[np.uint32] = (self.time * np.random.choice(self.arrival.options, size=(self.jobs), p=self.arrival.probability)).astype(np.uint32)
+        job_length: npt.NDArray[np.int32] = 1 + self.time * np.random.choice(self.length.options, size=(self.jobs,self.resource), p=self.length.probability)
+        usage: npt.NDArray[np.float64] = self.max_node_usage * np.random.choice(self.usage.options, size=(self.jobs), p=self.usage.probability)
         usage: npt.NDArray[np.float64] = np.tile(usage[..., np.newaxis, np.newaxis], (self.resource,self.time))
+        mask = np.arange(usage.shape[-1]) >= job_length[..., np.newaxis]
+        usage[mask] = .0
         jobs: Jobs = Jobs(arrival=arrival_time, usage=usage)
-        nodes: npt.NDArray[np.float64] = np.full((self.nodes, self.resource), fill_value=1.0, dtype=np.float64)
+        nodes: npt.NDArray[np.float64] = np.full((self.nodes, self.resource, self.time), fill_value=self.max_node_usage, dtype=np.float64)
         return ClusterObject(
             nodes=nodes,
             jobs=jobs,
@@ -91,11 +97,9 @@ class ClusterEnv(gym.Env):
     def _convert_index_to_space_action_idx(cls, cluster: ClusterObject, idx: int) -> tuple[int, int]:
         return  idx % cluster.n_nodes, idx // cluster.n_nodes
     @classmethod
-    def render_obs(cls, obs: dict[str, np.ndarray]) -> None:
+    def render_obs(cls, obs: dict[str, np.ndarray], cooldown: int = 1) -> None:
         queue: np.ndarray = obs["Queue"]
         nodes: np.ndarray = obs["Usage"]
-        print("Queue",queue.shape)
-        print("Node",nodes.shape)
 
         n_nodes: int = len(nodes)
         n_jobs: int = len(queue)
@@ -138,7 +142,7 @@ class ClusterEnv(gym.Env):
                 prefix="Queue",
             )
         plt.show(block=False)
-        plt.pause(1)
+        plt.pause(cooldown)
 
     def __post_init__(self):
         self._logger = logging.getLogger(self.__class__.__name__)
@@ -150,7 +154,7 @@ class ClusterEnv(gym.Env):
             tick_action: bool = action == 0
             reward: float = 0
             if tick_action:
-                self._logger.debug(f"Tick Cluster ...")
+                self._logger.info(f"Tick Cluster ...")
                 self._cluster.tick()
             else:
                 prefix: str = ""
@@ -158,7 +162,7 @@ class ClusterEnv(gym.Env):
                 if not self._cluster.schedule(n_idx=n_idx,j_idx=j_idx):
                     prefix= "Can't"
                     reward += self.INNCORECT_ACTION_REWARD
-                logging.debug(f"{prefix} Allocating job {j_idx} into node {n_idx}")
+                logging.info(f"{prefix} Allocating job {j_idx} into node {n_idx}")
             reward -= len(self._cluster.queue) / 2
             terminated: bool = self._cluster.all_jobs_complete()
             return self.create_observation(self._cluster), reward, terminated, False, {}
