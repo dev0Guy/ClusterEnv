@@ -56,8 +56,8 @@ class ClusterRenderer:
 
     @classmethod
     def _hide_unused(cls, axs: np.ndarray, nodes: int, jobs: int, nodes_n_columns: int):
-        nodes_to_remove: Iterable[Axes] = axs[:nodes_n_columns][nodes:] if len(axs.shape) == 1 else axs[:,:nodes_n_columns].flatten()[nodes:]
-        jobs_to_remove: Iterable[Axes] = axs[nodes_n_columns:][jobs:] if len(axs.shape) == 1 else axs[:, nodes_n_columns:].flatten()[jobs:]
+        nodes_to_remove: Iterable[Axes] = axs[:,:nodes_n_columns].flatten()[nodes:]
+        jobs_to_remove: Iterable[Axes] = axs[:, nodes_n_columns:].flatten()[jobs:]
         for ax in nodes_to_remove: plt.delaxes(ax)
         for ax in jobs_to_remove: plt.delaxes(ax)
 
