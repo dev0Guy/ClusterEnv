@@ -32,7 +32,9 @@ class ClusterRenderer:
     fig: Figure = field(init=False)
     axs: npt.NDArray = field(init=False)
     REGULAR_COLOR: str = 'copper'
+    REGULAR_TITLE_COLOR: str = 'black'
     ERROR_COLOR: str = 'RdGy'
+    ERROR_TITLE_COLOR: str = 'red'
 
     def __post_init__(self):
         self.jobs_n_columns: int = math.ceil(self.jobs ** 0.5)
@@ -51,15 +53,20 @@ class ClusterRenderer:
 
     @classmethod
     def _hide_unused(cls, axs: np.ndarray, nodes: int, jobs: int, nodes_n_columns: int):
-        nodes_to_remove: Iterable[Axes] = axs[:, :nodes_n_columns].flatten()[nodes:]
-        jobs_to_remove: Iterable[Axes] = axs[:, nodes_n_columns:].flatten()[jobs:]
+        if len(axs.shape) == 1:
+            nodes_to_remove: Iterable[Axes] = axs[:nodes_n_columns].flatten()[nodes:]
+            jobs_to_remove: Iterable[Axes] = axs[nodes_n_columns:].flatten()[jobs:]
+        else:
+            nodes_to_remove: Iterable[Axes] = axs[:nodes_n_columns].flatten()[nodes:]
+            jobs_to_remove: Iterable[Axes] = axs[:, nodes_n_columns:].flatten()[jobs:]
+        #
         for ax in nodes_to_remove: plt.delaxes(ax)
         for ax in jobs_to_remove: plt.delaxes(ax)
 
     @classmethod
-    def _draw(cls,matrix: np.ndarray,/,*, title: str ,ax: Axes, time: int, resource: int, cmap: str):
+    def _draw(cls,matrix: np.ndarray,/,*, title: str, title_color: str ,ax: Axes, time: int, resource: int, cmap: str):
         ax.imshow(matrix, cmap=cmap, vmin=0, vmax=100)
-        ax.set_title(title,fontsize=10)
+        ax.set_title(title, fontsize=10, color=title_color)
         # ax.set_xlabel('time', fontsize=5)
         # ax.set_ylabel('resource', fontsize=4)
         ax.set_xticks(np.arange(0, time, 0.5), minor=True)
@@ -69,24 +76,43 @@ class ClusterRenderer:
         ax.set_xticks([])
         ax.set_yticks([])
     @classmethod
-    def _draw_job(cls, job: np.ndarray,/,*, idx: int, ax: Axes, time: int, resource: int, cmap: str, status: JobStatus):
-        title: str = f"[J.{idx}] {status.name.lower()}"
-        cls._draw(job, title=title, ax=ax, time=time, resource=resource, cmap=cmap)
+    def _draw_job(cls, job: np.ndarray,/,*, title_color: str, idx: int, ax: Axes, time: int, resource: int, cmap: str, status: JobStatus):
+        title: str = f"[J.{idx}]" # {status.name.lower()}
+        if cmap != cls.ERROR_COLOR:
+            match status:
+                case JobStatus.NOT_ARRIVED:
+                    cmap="gray"
+                case JobStatus.WAITTING:
+                    pass
+                case JobStatus.RUNNING:
+                    cmap="twilight"
+                case JobStatus.COMPLETE:
+                    cmap="summer"
+                case _: raise ValueError(f"Invalid status {status}")
+        cls._draw(job, title=title, title_color=title_color, ax=ax, time=time, resource=resource, cmap=cmap)
     @classmethod
-    def _draw_node(cls, node: np.ndarray,/,*, idx: int, ax: Axes, time: int, resource: int, cmap: str):
+    def _draw_node(cls, node: np.ndarray,/,*,title_color: str, idx: int, ax: Axes, time: int, resource: int, cmap: str):
         title: str = f"[N.{idx}]"
-        cls._draw(node, title=title, ax=ax, time=time, resource=resource, cmap=cmap)
+        cls._draw(node, title=title, title_color=title_color, ax=ax, time=time, resource=resource, cmap=cmap)
 
     def __call__(self, obs: dict[str, np.ndarray],/,*, status: list[JobStatus] ,current_time: int, error: None | tuple[int,int]) -> Any:
         self.fig.suptitle( f"Time: {current_time}", fontsize=16, fontweight='bold')
         nodes: npt.NDArray = obs['Usage']
         queue: npt.NDArray = obs['Queue']
-        is_error: Callable[[int,int],str] = lambda idx, pos: self.ERROR_COLOR if error and idx == error[pos] else self.REGULAR_COLOR
-        node_ax: Callable[[int],npt.NDArray] = lambda n_idx: self.axs[n_idx // self.nodes_n_columns, n_idx % self.nodes_n_columns]
-        job_ax: Callable[[int],npt.NDArray] = lambda j_idx: self.axs[j_idx // self.jobs_n_columns, self.nodes_n_columns + (j_idx % self.jobs_n_columns)]
+        cmap_color: Callable[[int,int],str] = lambda idx, pos: self.ERROR_COLOR if error and idx == error[pos] else self.REGULAR_COLOR
+        title_color: Callable[[int,int],str] = lambda idx, pos: self.ERROR_TITLE_COLOR if error and idx == error[pos] else self.REGULAR_TITLE_COLOR
+        if len(self.axs) == 1:
+            node_ax: Callable[[int],npt.NDArray] = lambda n_idx: self.axs[n_idx // self.nodes_n_columns, n_idx % self.nodes_n_columns]
+            job_ax: Callable[[int],npt.NDArray] = lambda j_idx: self.axs[j_idx // self.jobs_n_columns, self.nodes_n_columns + (j_idx % self.jobs_n_columns)]
+        else:
+            node_ax: Callable[[int],npt.NDArray] = lambda n_idx: self.axs[n_idx % self.nodes_n_columns]
+            job_ax: Callable[[int],npt.NDArray] = lambda j_idx: self.axs[self.nodes_n_columns + (j_idx % self.jobs_n_columns)]
+
         # update matries
-        for n_idx, node in enumerate(nodes): self._draw_node(node, idx=n_idx, ax=node_ax(n_idx), time=self.time, resource=self.resource, cmap=is_error(n_idx,0))
-        for j_idx, job in enumerate(queue): self._draw_job(job, idx=j_idx, ax=job_ax(j_idx), time=self.time, resource=self.resource, cmap=is_error(j_idx,1), status=status[j_idx])
+        for n_idx, node in enumerate(nodes):
+            self._draw_node(node, title_color=title_color(n_idx,0),idx=n_idx, ax=node_ax(n_idx), time=self.time, resource=self.resource, cmap=cmap_color(n_idx,0))
+        for j_idx, job in enumerate(queue):
+            self._draw_job(job, title_color=title_color(j_idx,1), idx=j_idx, ax=job_ax(j_idx), time=self.time, resource=self.resource, cmap=cmap_color(j_idx,1), status=status[j_idx])
         # update figure
         plt.draw()
         plt.pause(self.cooldown)
@@ -119,10 +145,10 @@ class ClusterGenerator:
 
 @dataclass
 class ClusterEnv(gym.Env):
-    nodes: int = field(default=5)
-    jobs: int = field(default=50)
-    resource: int = field(default=3)
-    max_time: int = field(default=10)
+    nodes: int
+    jobs: int
+    resource: int
+    max_time: int
     # _render: Renderer = field(default_factory=Renderer)
     _time: int = field(default=0)
     _cluster: ClusterObject = field(init=False)
