@@ -49,17 +49,15 @@ class ClusterRenderer:
         self.fig, self.axs = plt.subplots(n_rows, n_columns, figsize=(12, 6),)
         self.fig.patch.set_facecolor('white')
 
+        self.axs = self.axs if len(self.axs.shape) > 1 else self.axs.reshape(1,-1)
+
+
         self._hide_unused(self.axs, nodes=self.nodes, jobs=self.jobs, nodes_n_columns=self.nodes_n_columns)
 
     @classmethod
     def _hide_unused(cls, axs: np.ndarray, nodes: int, jobs: int, nodes_n_columns: int):
-        if len(axs.shape) == 1:
-            nodes_to_remove: Iterable[Axes] = axs[:nodes_n_columns].flatten()[nodes:]
-            jobs_to_remove: Iterable[Axes] = axs[nodes_n_columns:].flatten()[jobs:]
-        else:
-            nodes_to_remove: Iterable[Axes] = axs[:nodes_n_columns].flatten()[nodes:]
-            jobs_to_remove: Iterable[Axes] = axs[:, nodes_n_columns:].flatten()[jobs:]
-        #
+        nodes_to_remove: Iterable[Axes] = axs[:nodes_n_columns][nodes:] if len(axs.shape) == 1 else axs[:,:nodes_n_columns].flatten()[nodes:]
+        jobs_to_remove: Iterable[Axes] = axs[nodes_n_columns:][jobs:] if len(axs.shape) == 1 else axs[:, nodes_n_columns:].flatten()[jobs:]
         for ax in nodes_to_remove: plt.delaxes(ax)
         for ax in jobs_to_remove: plt.delaxes(ax)
 
@@ -101,13 +99,8 @@ class ClusterRenderer:
         queue: npt.NDArray = obs['Queue']
         cmap_color: Callable[[int,int],str] = lambda idx, pos: self.ERROR_COLOR if error and idx == error[pos] else self.REGULAR_COLOR
         title_color: Callable[[int,int],str] = lambda idx, pos: self.ERROR_TITLE_COLOR if error and idx == error[pos] else self.REGULAR_TITLE_COLOR
-        if len(self.axs) == 1:
-            node_ax: Callable[[int],npt.NDArray] = lambda n_idx: self.axs[n_idx // self.nodes_n_columns, n_idx % self.nodes_n_columns]
-            job_ax: Callable[[int],npt.NDArray] = lambda j_idx: self.axs[j_idx // self.jobs_n_columns, self.nodes_n_columns + (j_idx % self.jobs_n_columns)]
-        else:
-            node_ax: Callable[[int],npt.NDArray] = lambda n_idx: self.axs[n_idx % self.nodes_n_columns]
-            job_ax: Callable[[int],npt.NDArray] = lambda j_idx: self.axs[self.nodes_n_columns + (j_idx % self.jobs_n_columns)]
-
+        node_ax: Callable[[int],npt.NDArray] = lambda n_idx: self.axs[n_idx // self.nodes_n_columns, n_idx % self.nodes_n_columns]
+        job_ax: Callable[[int],npt.NDArray] = lambda j_idx: self.axs[j_idx // self.jobs_n_columns, self.nodes_n_columns + (j_idx % self.jobs_n_columns)]
         # update matries
         for n_idx, node in enumerate(nodes):
             self._draw_node(node, title_color=title_color(n_idx,0),idx=n_idx, ax=node_ax(n_idx), time=self.time, resource=self.resource, cmap=cmap_color(n_idx,0))
