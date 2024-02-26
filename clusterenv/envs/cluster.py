@@ -1,8 +1,10 @@
-from typing import ParamSpecArgs, Self, Any, SupportsFloat, Optional
+from typing import Iterable, ParamSpecArgs, Self, Any, SupportsFloat, Optional
 from dataclasses import dataclass, field
 from gymnasium.core import RenderFrame
-from typing_extensions import Callable
-from .base import ClusterObject, Jobs, Renderer
+from typing_extensions import Callable, NamedTuple
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from .base import ClusterObject, JobStatus, Jobs
 from numpy._typing import NDArray
 import matplotlib.pyplot as plt
 import numpy.typing as npt
@@ -10,7 +12,6 @@ import gymnasium as gym
 import numpy as np
 import logging
 import math
-
 
 @dataclass
 class DistribConfig:
@@ -20,6 +21,75 @@ class DistribConfig:
 DEFUALT_ARRIVAL_FUNC: Callable = lambda: DistribConfig(options=[.0,.2,.3], probability=[.7,.2,.1])
 DEFUALT_LENGTH_FUNC: Callable = lambda: DistribConfig(options=[.0,.2,.3], probability=[.7,.2,.1])
 DEFUALT_USAGE_FUNC: Callable = lambda: DistribConfig(options=[0.1,0.5,1], probability=[.7,.2,.1])
+
+@dataclass
+class ClusterRenderer:
+    nodes: int
+    jobs: int
+    resource: int
+    time: int
+    cooldown: float = field(default=1.)
+    fig: Figure = field(init=False)
+    axs: npt.NDArray = field(init=False)
+    REGULAR_COLOR: str = 'copper'
+    ERROR_COLOR: str = 'RdGy'
+
+    def __post_init__(self):
+        self.jobs_n_columns: int = math.ceil(self.jobs ** 0.5)
+        self.nodes_n_columns: int = math.ceil(self.nodes ** 0.5)
+
+        jobs_n_rows: int = math.ceil(self.jobs/self.jobs_n_columns)
+        nodes_n_rows: int = math.ceil(self.nodes/self.nodes_n_columns)
+
+        n_rows: int = max(jobs_n_rows, nodes_n_rows)
+        n_columns: int = self.nodes_n_columns + self.jobs_n_columns
+
+        self.fig, self.axs = plt.subplots(n_rows, n_columns, figsize=(12, 6),)
+        self.fig.patch.set_facecolor('white')
+
+        self._hide_unused(self.axs, nodes=self.nodes, jobs=self.jobs, nodes_n_columns=self.nodes_n_columns)
+
+    @classmethod
+    def _hide_unused(cls, axs: np.ndarray, nodes: int, jobs: int, nodes_n_columns: int):
+        nodes_to_remove: Iterable[Axes] = axs[:, :nodes_n_columns].flatten()[nodes:]
+        jobs_to_remove: Iterable[Axes] = axs[:, nodes_n_columns:].flatten()[jobs:]
+        for ax in nodes_to_remove: plt.delaxes(ax)
+        for ax in jobs_to_remove: plt.delaxes(ax)
+
+    @classmethod
+    def _draw(cls,matrix: np.ndarray,/,*, title: str ,ax: Axes, time: int, resource: int, cmap: str):
+        ax.imshow(matrix, cmap=cmap, vmin=0, vmax=100)
+        ax.set_title(title,fontsize=10)
+        # ax.set_xlabel('time', fontsize=5)
+        # ax.set_ylabel('resource', fontsize=4)
+        ax.set_xticks(np.arange(0, time, 0.5), minor=True)
+        ax.set_yticks(np.arange(0, resource, 0.5), minor=True)
+        ax.tick_params(which='minor', length=0)
+        ax.grid(which='both', color='black', linestyle='-', linewidth=.5, alpha=0.3)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    @classmethod
+    def _draw_job(cls, job: np.ndarray,/,*, idx: int, ax: Axes, time: int, resource: int, cmap: str, status: JobStatus):
+        title: str = f"[J.{idx}] {status.name.lower()}"
+        cls._draw(job, title=title, ax=ax, time=time, resource=resource, cmap=cmap)
+    @classmethod
+    def _draw_node(cls, node: np.ndarray,/,*, idx: int, ax: Axes, time: int, resource: int, cmap: str):
+        title: str = f"[N.{idx}]"
+        cls._draw(node, title=title, ax=ax, time=time, resource=resource, cmap=cmap)
+
+    def __call__(self, obs: dict[str, np.ndarray],/,*, status: list[JobStatus] ,current_time: int, error: None | tuple[int,int]) -> Any:
+        self.fig.suptitle( f"Time: {current_time}", fontsize=16, fontweight='bold')
+        nodes: npt.NDArray = obs['Usage']
+        queue: npt.NDArray = obs['Queue']
+        is_error: Callable[[int,int],str] = lambda idx, pos: self.ERROR_COLOR if error and idx == error[pos] else self.REGULAR_COLOR
+        node_ax: Callable[[int],npt.NDArray] = lambda n_idx: self.axs[n_idx // self.nodes_n_columns, n_idx % self.nodes_n_columns]
+        job_ax: Callable[[int],npt.NDArray] = lambda j_idx: self.axs[j_idx // self.jobs_n_columns, self.nodes_n_columns + (j_idx % self.jobs_n_columns)]
+        # update matries
+        for n_idx, node in enumerate(nodes): self._draw_node(node, idx=n_idx, ax=node_ax(n_idx), time=self.time, resource=self.resource, cmap=is_error(n_idx,0))
+        for j_idx, job in enumerate(queue): self._draw_job(job, idx=j_idx, ax=job_ax(j_idx), time=self.time, resource=self.resource, cmap=is_error(j_idx,1), status=status[j_idx])
+        # update figure
+        plt.draw()
+        plt.pause(self.cooldown)
 
 @dataclass
 class ClusterGenerator:
@@ -58,7 +128,18 @@ class ClusterEnv(gym.Env):
     _cluster: ClusterObject = field(init=False)
     _logger: logging.Logger = field(init=False)
     _generator: ClusterGenerator = field(init=False)
+    _renderer: ClusterRenderer = field(init=False)
+    _action_error: tuple[int, int] | None = field(default=None)
     INNCORECT_ACTION_REWARD: int = field(default=-100)
+
+    def __post_init__(self):
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._generator = ClusterGenerator(nodes=self.nodes,jobs=self.jobs,resource=self.resource, time=self.max_time)
+        self._cluster = self._generator()
+        self.observation_space = self._observation_space(self._cluster)
+        self.action_space = self._action_space(self._cluster)
+        self._renderer = ClusterRenderer(nodes=self.nodes, jobs=self.jobs, resource=self.resource, time=self.max_time)
+
     @classmethod
     def create_observation(cls, cluster: ClusterObject) -> dict:
         return dict(
@@ -97,65 +178,11 @@ class ClusterEnv(gym.Env):
     @classmethod
     def _convert_index_to_space_action_idx(cls, cluster: ClusterObject, idx: int) -> tuple[int, int]:
         return  idx % cluster.n_nodes, idx // cluster.n_nodes
-    @classmethod
-    def render_obs(cls, obs: dict[str, np.ndarray],/,*, current_time: int,cooldown: int = 1) -> None:
-        queue: np.ndarray = obs["Queue"]
-        nodes: np.ndarray = obs["Usage"]
 
-        n_nodes: int = len(nodes)
-        n_jobs: int = len(queue)
-
-        jobs_n_columns: int = math.ceil(n_jobs ** 0.5)
-        jobs_n_rows: int = math.ceil(n_jobs/jobs_n_columns)
-
-        nodes_n_columns: int = math.ceil(n_nodes ** 0.5)
-        nodes_n_rows: int = math.ceil(n_nodes/nodes_n_columns)
-
-        n_rows: int = max(jobs_n_rows, nodes_n_rows)
-        n_columns: int = nodes_n_columns + jobs_n_columns
-
-        fig, axs = plt.subplots(n_rows, n_columns, figsize=(12, 6), sharex=True, sharey=True)
-        # title: str= f"Cluster: {current_time}"
-        fig.suptitle( f"Cluster: {current_time}", fontsize=16)
-
-        def draw(idx, r_idx: int , c_idx: int, matrix: np.ndarray, prefix: str):
-            axs[r_idx, c_idx].imshow(matrix, cmap='gray', vmin=0, vmax=100)
-            axs[r_idx, c_idx].set_title(f'{prefix} {idx+1}')
-            axs[r_idx, c_idx].set_xlabel('Time')
-            axs[r_idx, c_idx].set_ylabel('Resources')
-            axs[r_idx, c_idx].set_xticks([])
-            axs[r_idx, c_idx].set_yticks([])
-            axs[r_idx, c_idx].grid(True, color='black', linewidth=0.5)
-
-        for n_idx, node in enumerate(nodes):
-            draw(
-                idx=n_idx,
-                r_idx=n_idx // nodes_n_columns,
-                c_idx=n_idx % nodes_n_columns,
-                matrix=node,
-                prefix="Usage",
-            )
-
-        for j_id, job in enumerate(queue):
-            draw(
-                idx=j_id,
-                r_idx=j_id // jobs_n_columns,
-                c_idx=nodes_n_columns + (j_id % jobs_n_columns),
-                matrix=job,
-                prefix="Queue",
-            )
-        plt.show(block=False)
-        plt.pause(cooldown)
-
-    def __post_init__(self):
-        self._logger = logging.getLogger(self.__class__.__name__)
-        self._generator = ClusterGenerator(nodes=self.nodes,jobs=self.jobs,resource=self.resource, time=self.max_time)
-        self._cluster = self._generator()
-        self.observation_space = self._observation_space(self._cluster)
-        self.action_space = self._action_space(self._cluster)
     def step(self, action: int) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
             tick_action: bool = action == 0
             reward: float = 0
+            self._action_error = None
             if tick_action:
                 self._logger.info(f"Tick Cluster ...")
                 self._cluster.tick()
@@ -163,6 +190,7 @@ class ClusterEnv(gym.Env):
                 prefix: str = ""
                 n_idx, j_idx = self._convert_index_to_space_action_idx(self._cluster, action-1)
                 if not self._cluster.schedule(n_idx=n_idx,j_idx=j_idx):
+                    self._action_error = (n_idx, j_idx)
                     prefix= "Can't"
                     reward += self.INNCORECT_ACTION_REWARD
                 logging.info(f"{prefix} Allocating job {j_idx} into node {n_idx}")
@@ -174,5 +202,10 @@ class ClusterEnv(gym.Env):
         self._cluster = self._generator()
         return self.create_observation(self._cluster), {}
     def render(self) -> RenderFrame | list[RenderFrame] | None:
-        # return self._render.render_obs(self.create_observation(self._cluster))
-         return self.render_obs(self.create_observation(self._cluster),current_time=self._time)
+        status: list[JobStatus] = list(map(lambda x: JobStatus(x), self._cluster.jobs.status))
+        return self._renderer(
+            self.create_observation(self._cluster),
+            status=status,
+            current_time=self._cluster._time,
+            error=self._action_error,
+        )

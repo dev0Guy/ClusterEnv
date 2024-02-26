@@ -5,7 +5,6 @@ from typing_extensions import Type
 import numpy.typing as npt
 import numpy as np
 import logging
-import pygame
 import enum
 import math
 
@@ -70,9 +69,9 @@ class ClusterObject:
         self._run_time = np.zeros(len(self.jobs), dtype=np.uint32)
         self._usage  = np.zeros(self.nodes.shape)
         self.jobs.status[self._time == self.jobs.arrival] = JobStatus.WAITTING
-        logging.info(f"Created cluster with; nodes: {self.n_nodes}, jobs: {self.n_jobs}")
-        logging.info(f"Jobs Arrival Time: {self.jobs.arrival}")
-        logging.info(f"Jobs Length Time: {self.jobs.length}")
+        self._logger.debug(f"Created cluster with; nodes: {self.n_nodes}, jobs: {self.n_jobs}")
+        self._logger.debug(f"Jobs Arrival Time: {self.jobs.arrival}")
+        self._logger.debug(f"Jobs Length Time: {self.jobs.length}")
     def tick(self):
         """Foward cluster time by one second."""
         self._run_time += (self.jobs.status == JobStatus.RUNNING).astype(np.uint32)
@@ -80,10 +79,10 @@ class ClusterObject:
         # create index
         iteration_complete_jobs: npt.NDArray[np.bool_] = self._run_time == self.jobs.length
         arrived_jobs: npt.NDArray[np.bool_] = self.jobs.arrival == self._time
-        logging.info(f"After tick time: {self._time}")
+        self._logger.info(f"After tick time: {self._time}")
         # logging
-        logging.info(f"Iteration completed jobs: {np.where(iteration_complete_jobs)}")
-        logging.info(f"Iteration arrived jobs: {np.where(arrived_jobs)}")
+        self._logger.info(f"Iteration completed jobs: {np.where(iteration_complete_jobs)}")
+        self._logger.info(f"Iteration arrived jobs: {np.where(arrived_jobs)}")
         # set values
         self.jobs.status[iteration_complete_jobs] = JobStatus.COMPLETE
         self.jobs.usage[iteration_complete_jobs] = self._empty_job_cell_val
@@ -116,55 +115,3 @@ class ClusterObject:
                 return job_can_be_schedule
             case _:
                 return False
-
-@dataclass
-class Renderer:
-    screen_width: int = field(default=800)
-    screen_height: int = field(default=600)
-
-    def __post_init__(self):
-        pygame.init()
-        self.clock = pygame.time.Clock()
-        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-        self.font = pygame.font.SysFont('dsd', 24)
-
-    def draw_matrix(self, matrix, x, y, title):
-        cell_size = 40
-        padding = 5
-        font_height = 20
-        rows, cols = matrix.shape
-        text = self.font.render(title, True, (0, 0, 0))
-        self.screen.blit(text, (x, y - font_height))
-        for i in range(rows):
-            for j in range(cols):
-                color_value = int(255 * matrix[i, j] / 100)
-                color = (min(255, max(0, color_value)),) * 3  # Ensure color values are within range
-                pygame.draw.rect(self.screen, color, (x + j * cell_size, y + i * cell_size, cell_size, cell_size), 0)
-
-
-    def render_obs(self, obs: dict[str, np.ndarray], cooldown: int = 1):
-        queue: np.ndarray = obs["Queue"]
-        nodes: np.ndarray = obs["Usage"]
-
-        n_nodes: int = len(nodes)
-        n_jobs: int = len(queue)
-
-        jobs_n_columns: int = math.ceil(n_jobs ** 0.5)
-        jobs_n_rows: int = math.ceil(n_jobs/jobs_n_columns)
-
-        nodes_n_columns: int = math.ceil(n_nodes ** 0.5)
-        nodes_n_rows: int = math.ceil(n_nodes/nodes_n_columns)
-
-        n_rows: int = max(jobs_n_rows, nodes_n_rows)
-        n_columns: int = nodes_n_columns + jobs_n_columns
-
-        self.screen.fill((255, 255, 255))
-
-        for n_idx, node in enumerate(nodes):
-            self.draw_matrix(node, n_idx % nodes_n_columns * 300, n_idx // nodes_n_columns * 300, f'Usage {n_idx+1}')
-
-        for j_id, job in enumerate(queue):
-            self.draw_matrix(job, (j_id % jobs_n_columns + nodes_n_columns) * 300, j_id // jobs_n_columns * 300, f'Queue {j_id+1}')
-
-        pygame.display.flip()
-        pygame.time.wait(cooldown * 1000)
