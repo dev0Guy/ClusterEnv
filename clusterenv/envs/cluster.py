@@ -2,7 +2,7 @@ from typing import ParamSpecArgs, Self, Any, SupportsFloat, Optional
 from dataclasses import dataclass, field
 from gymnasium.core import RenderFrame
 from typing_extensions import Callable
-from .base import ClusterObject, Jobs
+from .base import ClusterObject, Jobs, Renderer
 from numpy._typing import NDArray
 import matplotlib.pyplot as plt
 import numpy.typing as npt
@@ -53,6 +53,7 @@ class ClusterEnv(gym.Env):
     jobs: int = field(default=50)
     resource: int = field(default=3)
     max_time: int = field(default=10)
+    # _render: Renderer = field(default_factory=Renderer)
     _time: int = field(default=0)
     _cluster: ClusterObject = field(init=False)
     _logger: logging.Logger = field(init=False)
@@ -97,7 +98,7 @@ class ClusterEnv(gym.Env):
     def _convert_index_to_space_action_idx(cls, cluster: ClusterObject, idx: int) -> tuple[int, int]:
         return  idx % cluster.n_nodes, idx // cluster.n_nodes
     @classmethod
-    def render_obs(cls, obs: dict[str, np.ndarray], cooldown: int = 1) -> None:
+    def render_obs(cls, obs: dict[str, np.ndarray],/,*, current_time: int,cooldown: int = 1) -> None:
         queue: np.ndarray = obs["Queue"]
         nodes: np.ndarray = obs["Usage"]
 
@@ -113,7 +114,9 @@ class ClusterEnv(gym.Env):
         n_rows: int = max(jobs_n_rows, nodes_n_rows)
         n_columns: int = nodes_n_columns + jobs_n_columns
 
-        _, axs = plt.subplots(n_rows, n_columns, figsize=(12, 6), sharex=True, sharey=True)
+        fig, axs = plt.subplots(n_rows, n_columns, figsize=(12, 6), sharex=True, sharey=True)
+        # title: str= f"Cluster: {current_time}"
+        fig.suptitle( f"Cluster: {current_time}", fontsize=16)
 
         def draw(idx, r_idx: int , c_idx: int, matrix: np.ndarray, prefix: str):
             axs[r_idx, c_idx].imshow(matrix, cmap='gray', vmin=0, vmax=100)
@@ -171,4 +174,5 @@ class ClusterEnv(gym.Env):
         self._cluster = self._generator()
         return self.create_observation(self._cluster), {}
     def render(self) -> RenderFrame | list[RenderFrame] | None:
-         return self.render_obs(self.create_observation(self._cluster))
+        # return self._render.render_obs(self.create_observation(self._cluster))
+         return self.render_obs(self.create_observation(self._cluster),current_time=self._time)
