@@ -20,7 +20,7 @@ class QueueWrapper(gym.Wrapper):
         self.unwrapped.observation_space["Queue"]= gym.spaces.Box(
             low=-1,
             high=np.inf,
-            shape=(self.limit, *self.unwrapped.observation_space["Queue"].shape[1:]),
+            shape=self.unwrapped.observation_space["Queue"].shape,
             dtype=np.float64
         )
         self.mapper = np.arange(self.unwrapped.jobs)
@@ -37,14 +37,11 @@ class QueueWrapper(gym.Wrapper):
         obs["Status"] = obs["Status"][prev_mapper][next_mapper]
         return obs
 
-
-
     @classmethod
     def _observation_limit(cls, obs: Dict[str, npt.NDArray], *, limit: int) -> Dict[str, npt.NDArray]:
         obs["Queue"] = obs["Queue"][:limit]
         obs["Status"] = obs["Status"][:limit]
         return obs
-
 
     def step(self, action: int) -> tuple:
         obs, *other = super().step(action)

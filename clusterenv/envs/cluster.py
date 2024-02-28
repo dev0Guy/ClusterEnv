@@ -167,7 +167,7 @@ class ClusterEnv(gym.Env):
             Usage=cluster.usage,
             Queue=cluster.queue,
             Nodes=cluster.nodes.copy(),
-            Status=cluster.jobs_status
+            Status=cluster.jobs_status.astype(np.intp)
         )
     @classmethod
     def _action_space(cls, cluster: ClusterObject) -> gym.spaces.Discrete:
@@ -198,7 +198,7 @@ class ClusterEnv(gym.Env):
                 low=0,
                 high=5,
                 shape=cluster.jobs_status.shape,
-                dtype=np.uint32
+                dtype=np.intp
             )
         ))
 
