@@ -10,8 +10,8 @@ import math
 
 class JobStatus(enum.IntEnum):
     """Enumeration representing the status of a job in a computing system."""
-    NOT_ARRIVED = 0
-    WAITTING = 1
+    PENDING = 0
+    UNEXISTING = 1
     RUNNING = 2
     COMPLETE = 3
 
@@ -29,7 +29,7 @@ class Jobs:
     def status(self) -> npt.NDArray[np.uint32]:
         return self._status
     def __post_init__(self):
-        self._status = np.zeros(self.arrival.shape,dtype=JobStatus)
+        self._status = np.full(shape=(self.arrival.shape),fill_value=JobStatus.UNEXISTING,dtype=JobStatus)
         _zero_idx: npt.NDArray[np.uint32] = (self.usage == 0).argmax(axis=-1)
         self._length = np.max(np.where(_zero_idx > 0,_zero_idx, len(self.usage[0])),axis=1)
     def __getitem__(self, idx: int) -> tuple[np.uint32, np.float64, np.uint32]:
@@ -50,6 +50,9 @@ class ClusterObject:
     _time: int = field(init=False,default=0)
     _logger: logging.Logger = field(init=False)
     @property
+    def time(self) -> int:
+        return self._time
+    @property
     def n_jobs(self) -> int:
         return len(self.jobs)
     @property
@@ -59,16 +62,20 @@ class ClusterObject:
     def usage(self) -> npt.NDArray[np.float64]:
         return self._usage.copy()
     @property
+    def jobs_status(self) -> npt.NDArray[np.uint32]:
+        return self.jobs.status.copy()
+    @property
     def queue(self) -> npt.NDArray[np.float64]:
         # idx: npt.NDArray[np.bool_] = np.logical_or(self.jobs.status == JobStatus.WAITTING ,self.jobs.status == JobStatus.RUNNING)
         return self.jobs.usage.copy()
+
     def all_jobs_complete(self) -> bool:
         return bool(np.all(self.jobs.status == JobStatus.COMPLETE))
     def __post_init__(self):
         self._logger = logging.getLogger(self.__class__.__name__)
         self._run_time = np.zeros(len(self.jobs), dtype=np.uint32)
         self._usage  = np.zeros(self.nodes.shape)
-        self.jobs.status[self._time == self.jobs.arrival] = JobStatus.WAITTING
+        self.jobs.status[self._time == self.jobs.arrival] = JobStatus.PENDING
         self._logger.debug(f"Created cluster with; nodes: {self.n_nodes}, jobs: {self.n_jobs}")
         self._logger.debug(f"Jobs Arrival Time: {self.jobs.arrival}")
         self._logger.debug(f"Jobs Length Time: {self.jobs.length}")
@@ -86,7 +93,7 @@ class ClusterObject:
         # set values
         self.jobs.status[iteration_complete_jobs] = JobStatus.COMPLETE
         self.jobs.usage[iteration_complete_jobs] = self._empty_job_cell_val
-        self.jobs.status[arrived_jobs] = JobStatus.WAITTING
+        self.jobs.status[arrived_jobs] = JobStatus.PENDING
         # move usage time by one
         self._usage = np.roll(self._usage, shift=-1,axis=-1)
         self._usage[:,:,-1] = 0
@@ -106,7 +113,7 @@ class ClusterObject:
         _, job_usage, job_status = self.jobs[j_idx]
         logging.info(f"Try to schedule job {j_idx} with status {JobStatus(job_status).name}")
         match job_status:
-            case JobStatus.WAITTING:
+            case JobStatus.PENDING:
                 job_can_be_schedule: bool = False
                 node_free_space: npt.NDArray[np.float64] = self.nodes[n_idx] - self._usage[n_idx]
                 if (job_can_be_schedule := bool(np.all(node_free_space >= job_usage))):

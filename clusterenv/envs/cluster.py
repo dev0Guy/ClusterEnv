@@ -18,7 +18,7 @@ class DistribConfig:
     options: list[Any]
     probability: list[float]
 
-DEFUALT_ARRIVAL_FUNC: Callable = lambda: DistribConfig(options=[.0,.2,.3], probability=[.7,.2,.1])
+DEFUALT_ARRIVAL_FUNC: Callable = lambda: DistribConfig(options=[.0,.2,.3], probability=[.5,.4,.1])
 DEFUALT_LENGTH_FUNC: Callable = lambda: DistribConfig(options=[.0,.2,.3], probability=[.7,.2,.1])
 DEFUALT_USAGE_FUNC: Callable = lambda: DistribConfig(options=[0.1,0.5,1], probability=[.7,.2,.1])
 
@@ -28,9 +28,10 @@ class ClusterRenderer:
     jobs: int
     resource: int
     time: int
-    cooldown: float = field(default=1.)
+    cooldown: float = field(default=5)
     fig: Figure = field(init=False)
     axs: npt.NDArray = field(init=False)
+    CMAP_COLORS: tuple = ('copper', 'gray', 'twilight', 'summer')
     REGULAR_COLOR: str = 'copper'
     REGULAR_TITLE_COLOR: str = 'black'
     ERROR_COLOR: str = 'RdGy'
@@ -51,7 +52,6 @@ class ClusterRenderer:
 
         self.axs = self.axs if len(self.axs.shape) > 1 else self.axs.reshape(1,-1)
 
-
         self._hide_unused(self.axs, nodes=self.nodes, jobs=self.jobs, nodes_n_columns=self.nodes_n_columns)
 
     @classmethod
@@ -65,8 +65,6 @@ class ClusterRenderer:
     def _draw(cls,matrix: np.ndarray,/,*, title: str, title_color: str ,ax: Axes, time: int, resource: int, cmap: str):
         ax.imshow(matrix, cmap=cmap, vmin=0, vmax=100)
         ax.set_title(title, fontsize=10, color=title_color)
-        # ax.set_xlabel('time', fontsize=5)
-        # ax.set_ylabel('resource', fontsize=4)
         ax.set_xticks(np.arange(0, time, 0.5), minor=True)
         ax.set_yticks(np.arange(0, resource, 0.5), minor=True)
         ax.tick_params(which='minor', length=0)
@@ -75,28 +73,19 @@ class ClusterRenderer:
         ax.set_yticks([])
     @classmethod
     def _draw_job(cls, job: np.ndarray,/,*, title_color: str, idx: int, ax: Axes, time: int, resource: int, cmap: str, status: JobStatus):
-        title: str = f"[J.{idx}]" # {status.name.lower()}
-        if cmap != cls.ERROR_COLOR:
-            match status:
-                case JobStatus.NOT_ARRIVED:
-                    cmap="gray"
-                case JobStatus.WAITTING:
-                    pass
-                case JobStatus.RUNNING:
-                    cmap="twilight"
-                case JobStatus.COMPLETE:
-                    cmap="summer"
-                case _: raise ValueError(f"Invalid status {status}")
+        title: str = f"[J.{idx}]"
+        cmap = cmap if cmap == cls.ERROR_COLOR else cls.CMAP_COLORS[status]
         cls._draw(job, title=title, title_color=title_color, ax=ax, time=time, resource=resource, cmap=cmap)
     @classmethod
     def _draw_node(cls, node: np.ndarray,/,*,title_color: str, idx: int, ax: Axes, time: int, resource: int, cmap: str):
         title: str = f"[N.{idx}]"
         cls._draw(node, title=title, title_color=title_color, ax=ax, time=time, resource=resource, cmap=cmap)
 
-    def __call__(self, obs: dict[str, np.ndarray],/,*, status: list[JobStatus] ,current_time: int, error: None | tuple[int,int]) -> Any:
+    def __call__(self, obs: dict[str, np.ndarray],/,*, current_time: int, error: None | tuple[int,int]) -> Any:
         self.fig.suptitle( f"Time: {current_time}", fontsize=16, fontweight='bold')
         nodes: npt.NDArray = obs['Usage']
         queue: npt.NDArray = obs['Queue']
+        status: npt.NDArray[np.uint32] = obs['Status']
         cmap_color: Callable[[int,int],str] = lambda idx, pos: self.ERROR_COLOR if error and idx == error[pos] else self.REGULAR_COLOR
         title_color: Callable[[int,int],str] = lambda idx, pos: self.ERROR_TITLE_COLOR if error and idx == error[pos] else self.REGULAR_TITLE_COLOR
         node_ax: Callable[[int],npt.NDArray] = lambda n_idx: self.axs[n_idx // self.nodes_n_columns, n_idx % self.nodes_n_columns]
@@ -105,7 +94,16 @@ class ClusterRenderer:
         for n_idx, node in enumerate(nodes):
             self._draw_node(node, title_color=title_color(n_idx,0),idx=n_idx, ax=node_ax(n_idx), time=self.time, resource=self.resource, cmap=cmap_color(n_idx,0))
         for j_idx, job in enumerate(queue):
-            self._draw_job(job, title_color=title_color(j_idx,1), idx=j_idx, ax=job_ax(j_idx), time=self.time, resource=self.resource, cmap=cmap_color(j_idx,1), status=status[j_idx])
+            self._draw_job(
+                job,
+                title_color=title_color(j_idx,1),
+                idx=j_idx,
+                ax=job_ax(j_idx),
+                time=self.time,
+                resource=self.resource,
+                cmap=cmap_color(j_idx,1),
+                status=JobStatus(status[j_idx])
+            )
         # update figure
         plt.draw()
         plt.pause(self.cooldown)
@@ -143,13 +141,17 @@ class ClusterEnv(gym.Env):
     resource: int
     max_time: int
     # _render: Renderer = field(default_factory=Renderer)
-    _time: int = field(default=0)
+    # _time: int = field(default=0)
     _cluster: ClusterObject = field(init=False)
     _logger: logging.Logger = field(init=False)
     _generator: ClusterGenerator = field(init=False)
     _renderer: ClusterRenderer = field(init=False)
     _action_error: tuple[int, int] | None = field(default=None)
     INNCORECT_ACTION_REWARD: int = field(default=-100)
+
+    @property
+    def time(self) -> int:
+        return self._cluster.time
 
     def __post_init__(self):
         self._logger = logging.getLogger(self.__class__.__name__)
@@ -165,6 +167,7 @@ class ClusterEnv(gym.Env):
             Usage=cluster.usage,
             Queue=cluster.queue,
             Nodes=cluster.nodes.copy(),
+            Status=cluster.jobs_status
         )
     @classmethod
     def _action_space(cls, cluster: ClusterObject) -> gym.spaces.Discrete:
@@ -190,6 +193,12 @@ class ClusterEnv(gym.Env):
                 high=max_val,
                 shape=cluster.nodes.shape,
                 dtype=np.float64
+            ),
+            Status=gym.spaces.Box(
+                low=0,
+                high=5,
+                shape=cluster.jobs_status.shape,
+                dtype=np.uint32
             )
         ))
 
@@ -221,10 +230,8 @@ class ClusterEnv(gym.Env):
         self._cluster = self._generator()
         return self.create_observation(self._cluster), {}
     def render(self) -> RenderFrame | list[RenderFrame] | None:
-        status: list[JobStatus] = list(map(lambda x: JobStatus(x), self._cluster.jobs.status))
         return self._renderer(
             self.create_observation(self._cluster),
-            status=status,
-            current_time=self._cluster._time,
-            error=self._action_error,
+            current_time=self.time,
+            error=self._action_error
         )
