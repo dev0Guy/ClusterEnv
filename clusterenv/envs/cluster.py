@@ -162,16 +162,27 @@ class ClusterEnv(gym.Env):
         self._renderer = ClusterRenderer(nodes=self.nodes, jobs=self.jobs, resource=self.resource, time=self.max_time)
 
     @classmethod
-    def create_observation(cls, cluster: ClusterObject) -> dict:
+    def _mask_queue_observation(cls, cluster: ClusterObject):
+        obs: dict[str, npt.NDArray] = cls._observation(cluster)
+        pendeing_jobs: npt.NDArray = cluster.jobs.status == JobStatus.PENDING
+        obs["Queue"][~pendeing_jobs] = 0
+        return obs
+
+
+    @classmethod
+    def _observation(cls, cluster: ClusterObject) -> dict:
         return dict(
             Usage=cluster.usage,
             Queue=cluster.queue,
             Nodes=cluster.nodes.copy(),
             Status=cluster.jobs_status.astype(np.intp)
         )
+
+
     @classmethod
     def _action_space(cls, cluster: ClusterObject) -> gym.spaces.Discrete:
         return gym.spaces.Discrete((cluster.n_nodes * cluster.n_jobs) + 1)
+
     @classmethod
     def _observation_space(cls, cluster: ClusterObject) -> gym.spaces.Dict:
         max_val = np.max(cluster.nodes)
@@ -183,7 +194,7 @@ class ClusterEnv(gym.Env):
                 dtype=np.float64
             ),
             Queue=gym.spaces.Box(
-                low=-1,
+                low=0,
                 high=max_val,
                 shape=cluster.jobs.usage.shape,
                 dtype=np.float64
@@ -203,9 +214,12 @@ class ClusterEnv(gym.Env):
         ))
 
 
-    @classmethod
-    def _convert_index_to_space_action_idx(cls, cluster: ClusterObject, idx: int) -> tuple[int, int]:
-        return  idx % cluster.n_nodes, idx // cluster.n_nodes
+
+    def convert_action(self, idx: int) -> tuple[int, int]:
+        return  idx % self._cluster.n_nodes, idx // self._cluster.n_nodes
+
+    def convert_to_action(self, n_idx: int, j_idx: int) -> int:
+        return j_idx * self._cluster.n_nodes + n_idx
 
     def step(self, action: int) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
             tick_action: bool = action == 0
@@ -216,7 +230,7 @@ class ClusterEnv(gym.Env):
                 self._cluster.tick()
             else:
                 prefix: str = ""
-                n_idx, j_idx = self._convert_index_to_space_action_idx(self._cluster, action-1)
+                n_idx, j_idx = self.convert_action(action-1)
                 if not self._cluster.schedule(n_idx=n_idx,j_idx=j_idx):
                     self._action_error = (n_idx, j_idx)
                     prefix= "Can't"
@@ -224,14 +238,14 @@ class ClusterEnv(gym.Env):
                 logging.info(f"{prefix} Allocating job {j_idx} into node {n_idx}")
             reward -= len(self._cluster.queue) / 2
             terminated: bool = self._cluster.all_jobs_complete()
-            return self.create_observation(self._cluster), reward, terminated, False, {}
+            return self._mask_queue_observation(self._cluster), reward, terminated, False, {}
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[Any, dict[str, Any]]:
         self._cluster = self._generator()
-        return self.create_observation(self._cluster), {}
+        return self._mask_queue_observation(self._cluster), {}
     def render(self) -> RenderFrame | list[RenderFrame] | None:
         return self._renderer(
-            self.create_observation(self._cluster),
+            self._observation(self._cluster),
             current_time=self.time,
             error=self._action_error
         )
