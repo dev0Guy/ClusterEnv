@@ -30,7 +30,8 @@ class QueueWrapper(gym.Wrapper):
 
     @classmethod
     def _convert_observation(cls, obs: Dict[str, npt.NDArray[np.float64]], *, mapper: npt.NDArray[np.intp], limit: None | int = None) -> tuple[npt.NDArray[np.intp],dict]:
-        new_mapper: npt.NDArray[np.intp] = mapper[np.argsort(obs["Status"][mapper])]
+        position = np.concatenate([np.where(obs["Status"][mapper] == j_status.value)[0] for j_status in JobStatus])
+        new_mapper: npt.NDArray[np.intp] =mapper[position]
         obs["Queue"] = obs["Queue"][new_mapper]
         obs["Status"] = obs["Status"][new_mapper]
         if limit: obs["Queue"] = obs["Queue"][:limit]
