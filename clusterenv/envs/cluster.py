@@ -140,6 +140,7 @@ class ClusterEnv(gym.Env):
     jobs: int
     resource: int
     max_time: int
+    cooldown: float = field(default=1.0)
     # _render: Renderer = field(default_factory=Renderer)
     # _time: int = field(default=0)
     _cluster: ClusterObject = field(init=False)
@@ -159,7 +160,7 @@ class ClusterEnv(gym.Env):
         self._cluster = self._generator()
         self.observation_space = self._observation_space(self._cluster)
         self.action_space = self._action_space(self._cluster)
-        self._renderer = ClusterRenderer(nodes=self.nodes, jobs=self.jobs, resource=self.resource, time=self.max_time)
+        self._renderer = ClusterRenderer(nodes=self.nodes, jobs=self.jobs, resource=self.resource, time=self.max_time, cooldown=self.cooldown)
 
     @classmethod
     def _mask_queue_observation(cls, cluster: ClusterObject):
@@ -194,7 +195,7 @@ class ClusterEnv(gym.Env):
                 dtype=np.float64
             ),
             Queue=gym.spaces.Box(
-                low=0,
+                low=-1,
                 high=max_val,
                 shape=cluster.jobs.usage.shape,
                 dtype=np.float64

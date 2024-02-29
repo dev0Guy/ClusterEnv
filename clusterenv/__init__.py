@@ -8,5 +8,6 @@ register(
         jobs=10,
         resource=3,
         max_time=5,
+        cooldown=1.0,
     )
 )
