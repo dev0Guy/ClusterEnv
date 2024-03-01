@@ -134,6 +134,9 @@ class ClusterGenerator:
             jobs=jobs,
         )
 
+def create_metadata():
+    return {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+
 @dataclass
 class ClusterEnv(gym.Env):
     nodes: int
@@ -141,15 +144,14 @@ class ClusterEnv(gym.Env):
     resource: int
     max_time: int
     cooldown: float = field(default=1.0)
-    # _render: Renderer = field(default_factory=Renderer)
-    # _time: int = field(default=0)
     _cluster: ClusterObject = field(init=False)
     _logger: logging.Logger = field(init=False)
     _generator: ClusterGenerator = field(init=False)
     _renderer: ClusterRenderer = field(init=False)
     _action_error: tuple[int, int] | None = field(default=None)
     INNCORECT_ACTION_REWARD: int = field(default=-100)
-
+    metadata: dict = field(default_factory=create_metadata)
+    render_mode: str = field(default="human")
     @property
     def time(self) -> int:
         return self._cluster.time
@@ -169,7 +171,6 @@ class ClusterEnv(gym.Env):
         obs["Queue"][~pendeing_jobs] = 0
         return obs
 
-
     @classmethod
     def _observation(cls, cluster: ClusterObject) -> dict:
         return dict(
@@ -178,7 +179,6 @@ class ClusterEnv(gym.Env):
             Nodes=cluster.nodes.copy(),
             Status=cluster.jobs_status.astype(np.intp)
         )
-
 
     @classmethod
     def _action_space(cls, cluster: ClusterObject) -> gym.spaces.Discrete:
@@ -245,8 +245,9 @@ class ClusterEnv(gym.Env):
         self._cluster = self._generator()
         return self._mask_queue_observation(self._cluster), {}
     def render(self) -> RenderFrame | list[RenderFrame] | None:
-        return self._renderer(
-            self._observation(self._cluster),
-            current_time=self.time,
-            error=self._action_error
-        )
+        if self.render_mode == "rgb_array":
+            return self._renderer(
+                self._observation(self._cluster),
+                current_time=self.time,
+                error=self._action_error
+            )

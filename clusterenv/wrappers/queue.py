@@ -52,6 +52,7 @@ class QueueWrapper(gym.Wrapper):
         return obs, *other
 
     def render(self) -> RenderFrame | list[RenderFrame] | None:
+        if self.unwrapped.render_mode != "rgb_array": return
         _, obs = self._convert_observation(
             self.unwrapped._observation(self.unwrapped._cluster),
             mapper=self.mapper
