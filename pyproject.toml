@@ -9,7 +9,6 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 gymnasium = "^0.29.1"
-pytest = "^8.0.1"
 matplotlib = "^3.8.3"
 
 [tool.poetry.group.dev.dependencies]
