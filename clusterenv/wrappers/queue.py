@@ -25,7 +25,8 @@ class QueueWrapper(gym.Wrapper):
         )
         self.mapper = np.arange(self.unwrapped.jobs)
         self.action_space = gym.spaces.Discrete(self.limit * self.unwrapped.nodes +1)
-
+        self._render_mode = self.unwrapped.render_mode
+        self.unwrapped.render_mode=None
 
 
     @classmethod
@@ -43,16 +44,19 @@ class QueueWrapper(gym.Wrapper):
             action = self.unwrapped.convert_to_action(n_idx, self.mapper[j_idx]) + 1
         obs, *other = super().step(action)
         self.mapper, obs = self._convert_observation(obs, mapper=self.mapper, limit=self.limit)
+        if self._render_mode== "human":
+            self.render()
         return obs, *other
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple:
         obs, *other = super().reset(seed=seed,options=options)
         self.mapper = np.arange(self.unwrapped.jobs)
         self.mapper, obs = self._convert_observation(obs, mapper=self.mapper, limit=self.limit)
+        if self._render_mode == "human":
+            self.render()
         return obs, *other
 
     def render(self) -> RenderFrame | list[RenderFrame] | None:
-        if self.unwrapped.render_mode != "rgb_array": return
         _, obs = self._convert_observation(
             self.unwrapped._observation(self.unwrapped._cluster),
             mapper=self.mapper

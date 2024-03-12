@@ -134,8 +134,6 @@ class ClusterGenerator:
             jobs=jobs,
         )
 
-def create_metadata():
-    return {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
 @dataclass
 class ClusterEnv(gym.Env):
@@ -150,13 +148,14 @@ class ClusterEnv(gym.Env):
     _renderer: ClusterRenderer = field(init=False)
     _action_error: tuple[int, int] | None = field(default=None)
     INNCORECT_ACTION_REWARD: int = field(default=-100)
-    metadata: dict = field(default_factory=create_metadata)
-    render_mode: str = field(default="rgb_array")
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+    render_mode: str = field(default=None)
     @property
     def time(self) -> int:
         return self._cluster.time
 
     def __post_init__(self):
+        super(ClusterEnv, self).__init__()
         self._logger = logging.getLogger(self.__class__.__name__)
         self._generator = ClusterGenerator(nodes=self.nodes,jobs=self.jobs,resource=self.resource, time=self.max_time)
         self._cluster = self._generator()
@@ -214,8 +213,6 @@ class ClusterEnv(gym.Env):
             )
         ))
 
-
-
     def convert_action(self, idx: int) -> tuple[int, int]:
         return  idx % self._cluster.n_nodes, idx // self._cluster.n_nodes
 
@@ -239,15 +236,19 @@ class ClusterEnv(gym.Env):
                 logging.info(f"{prefix} Allocating job {j_idx} into node {n_idx}")
             reward -= len(self._cluster.queue) / 2
             terminated: bool = self._cluster.all_jobs_complete()
+            if self.render_mode == "human":
+                self.render()
             return self._mask_queue_observation(self._cluster), reward, terminated, False, {}
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[Any, dict[str, Any]]:
         self._cluster = self._generator()
+        if self.render_mode == "human":
+            self.render()
         return self._mask_queue_observation(self._cluster), {}
+    
     def render(self) -> RenderFrame | list[RenderFrame] | None:
-        if self.render_mode == "rgb_array":
-            return self._renderer(
-                self._observation(self._cluster),
-                current_time=self.time,
-                error=self._action_error
-            )
+        return self._renderer(
+            self._observation(self._cluster),
+            current_time=self.time,
+            error=self._action_error
+        )
