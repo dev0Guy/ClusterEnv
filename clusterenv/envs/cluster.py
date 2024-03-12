@@ -151,7 +151,7 @@ class ClusterEnv(gym.Env):
     _action_error: tuple[int, int] | None = field(default=None)
     INNCORECT_ACTION_REWARD: int = field(default=-100)
     metadata: dict = field(default_factory=create_metadata)
-    render_mode: str = field(default="human")
+    render_mode: str = field(default="rgb_array")
     @property
     def time(self) -> int:
         return self._cluster.time
