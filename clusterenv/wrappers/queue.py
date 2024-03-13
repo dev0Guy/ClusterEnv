@@ -28,7 +28,6 @@ class QueueWrapper(gym.Wrapper):
         self._render_mode = self.unwrapped.render_mode
         self.unwrapped.render_mode=None
 
-
     @classmethod
     def _convert_observation(cls, obs: Dict[str, npt.NDArray[np.float64]], *, mapper: npt.NDArray[np.intp], limit: None | int = None) -> tuple[npt.NDArray[np.intp],dict]:
         position = np.concatenate([np.where(obs["Status"][mapper] == j_status.value)[0] for j_status in JobStatus])
