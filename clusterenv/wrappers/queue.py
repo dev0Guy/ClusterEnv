@@ -11,14 +11,25 @@ import logging
 
 @dataclass
 class QueueWrapper(gym.Wrapper):
-    env: ClusterEnv
+    """
+    Object responsible of Organize Cluster Queue.
+    TODO: FIX
+
+    :param env: cluster gym.Envs
+    :param limit: queue length
+    :param mapper: inner attribute mapping original position of jobs to new one
+    """
+
+    env: gym.Env
     limit: int = field(default=3)
     mapper: npt.NDArray[np.intp] = field(init=False)
 
     def __post_init__(self):
-        super(QueueWrapper, self).__init__(self.env)
+        gym.Wrapper.__init__(self, self.env)
+        # super(QueueWrapper, self).__init__(self.env)
         assert isinstance(self.unwrapped, ClusterEnv)
-        self.unwrapped.observation_space["Queue"] = gym.spaces.Box(
+        # change original space
+        self.observation_space["Queue"] = gym.spaces.Box(
             low=0,
             high=np.inf,
             shape=self.unwrapped.observation_space["Queue"].shape,
@@ -26,8 +37,6 @@ class QueueWrapper(gym.Wrapper):
         )
         self.mapper = np.arange(self.unwrapped.jobs)
         self.action_space = gym.spaces.Discrete(self.limit * self.unwrapped.nodes + 1)
-        self._render_mode = self.unwrapped.render_mode
-        self.unwrapped.render_mode = None
 
     @classmethod
     def _convert_observation(
@@ -58,8 +67,7 @@ class QueueWrapper(gym.Wrapper):
         self.mapper, obs = self._convert_observation(
             obs, mapper=self.mapper, limit=self.limit
         )
-        if self._render_mode == "human":
-            self.render()
+        self.render()
         return obs, *other
 
     def reset(
@@ -70,14 +78,21 @@ class QueueWrapper(gym.Wrapper):
         self.mapper, obs = self._convert_observation(
             obs, mapper=self.mapper, limit=self.limit
         )
-        if self._render_mode == "human":
-            self.render()
+        self.render()
         return obs, *other
 
-    def render(self) -> RenderFrame | list[RenderFrame] | None:
+    def render(self) -> RenderFrame | list[RenderFrame] | None | npt.NDArray[np.uint8]:
         _, obs = self._convert_observation(
             self.unwrapped._observation(self.unwrapped._cluster), mapper=self.mapper
         )
-        return self.unwrapped._renderer(
-            obs, current_time=self.unwrapped.time, error=self.unwrapped._action_error
-        )
+        if self.unwrapped._renderer:
+            fig = self.unwrapped._renderer(
+                obs,
+                current_time=self.unwrapped.time,
+                error=self.unwrapped._action_error,
+            )
+            if self.unwrapped.render_mode == "rgb_array":
+                fig.canvas.draw()
+                buf = fig.canvas.tostring_rgb()
+                width, height = fig.canvas.get_width_height()
+                return np.frombuffer(buf, dtype=np.uint8).reshape((height, width, 3))

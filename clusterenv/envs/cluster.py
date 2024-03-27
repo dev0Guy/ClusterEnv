@@ -292,17 +292,17 @@ class ClusterEnv(gym.Env):
         self.render()
         return self._mask_queue_observation(self._cluster), {}
 
-    def render(self) -> RenderFrame | list[RenderFrame] | None:
+    def render(self) -> RenderFrame | list[RenderFrame] | None | npt.NDArray[np.uint8]:
         """
         Render Env using mathplotlib.
         """
         if self._renderer:
+            fig = self._renderer(
+                self._observation(self._cluster),
+                current_time=self.time,
+                error=self._action_error,
+            )
             if self.render_mode == "rgb_array":
-                fig = self._renderer(
-                    self._observation(self._cluster),
-                    current_time=self.time,
-                    error=self._action_error,
-                )
                 fig.canvas.draw()
                 buf = fig.canvas.tostring_rgb()
                 width, height = fig.canvas.get_width_height()
