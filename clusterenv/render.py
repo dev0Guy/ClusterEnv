@@ -1,4 +1,4 @@
-from clusterenv.envs.base import JobStatus
+from clusterenv._types import JobStatus
 from typing import Iterable, Callable, Any
 from dataclasses import dataclass, field
 from matplotlib.figure import Figure
@@ -27,13 +27,14 @@ class ClusterRenderer:
     jobs: int
     resource: int
     time: int
-    cooldown: float = field(default=5)
+    cooldown: float
     fig: Figure = field(init=False)
     axs: npt.NDArray = field(init=False)
     CMAP_COLORS: tuple = ("copper", "gray", "twilight", "summer")
     REGULAR_COLOR: str = "copper"
     REGULAR_TITLE_COLOR: str = "black"
     ERROR_COLOR: str = "RdGy"
+    CORRECT_COLOR: str = "Greens"
     ERROR_TITLE_COLOR: str = "red"
 
     def __post_init__(self):
@@ -47,14 +48,8 @@ class ClusterRenderer:
         n_columns: int = self.nodes_n_columns + self.jobs_n_columns
 
         self.fig, self.axs = plt.subplots(
-            n_rows,
-            n_columns,
-            figsize=(12, 6),
+            n_rows, n_columns, figsize=(12, 6), facecolor="white"
         )
-        self.fig.patch.set_facecolor("white")
-
-        self.axs = self.axs if len(self.axs.shape) > 1 else self.axs.reshape(1, -1)
-
         self._hide_unused(
             self.axs,
             nodes=self.nodes,
@@ -143,6 +138,16 @@ class ClusterRenderer:
             cmap=cmap,
         )
 
+    @classmethod
+    def color_map(cls, error, correct):
+        def inner(idx, pos):
+            if error and idx == error[pos]:
+                return cls.ERROR_COLOR
+            elif correct and idx == correct[pos]:
+                return cls.CORRECT_COLOR
+            return cls.REGULAR_COLOR
+        return inner
+
     def __call__(
         self,
         obs: dict[str, np.ndarray],
@@ -150,16 +155,18 @@ class ClusterRenderer:
         *,
         current_time: int,
         error: None | tuple[int, int],
+        correct: None | tuple[int, int]
     ) -> Any:
         self.fig.suptitle(f"Time: {current_time}", fontsize=16, fontweight="bold")
         nodes: npt.NDArray = obs["Usage"]
         queue: npt.NDArray = obs["Queue"]
         status: npt.NDArray[np.uint32] = obs["Status"]
-        cmap_color: Callable[[int, int], str] = (
-            lambda idx, pos: self.ERROR_COLOR
-            if error and idx == error[pos]
-            else self.REGULAR_COLOR
-        )
+        cmap_color = self.color_map(error, correct)
+        # cmap_color: Callable[[int, int], str] = (
+        #     lambda idx, pos: self.ERROR_COLOR
+        #     if error and idx == error[pos]
+        #     else self.REGULAR_COLOR
+        # )
         title_color: Callable[[int, int], str] = (
             lambda idx, pos: self.ERROR_TITLE_COLOR
             if error and idx == error[pos]

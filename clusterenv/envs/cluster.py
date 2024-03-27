@@ -1,309 +1,207 @@
-from typing import Iterable, ParamSpecArgs, Self, Any, SupportsFloat, Optional, Tuple
-from dataclasses import dataclass, field
-from gymnasium.core import RenderFrame
-from typing_extensions import Callable, NamedTuple
-from .base import ClusterObject, JobStatus, Jobs
-from numpy._typing import NDArray
-import numpy.typing as npt
+from clusterenv.common import NodeGenerator, JobGenerator
+from clusterenv.render import ClusterRenderer
+from clusterenv._types import Jobs, Nodes, JobStatus
+from gymnasium.core import ActType, ObsType, RenderFrame
+from typing import List, Any, SupportsFloat, overload
 import gymnasium as gym
 import numpy as np
 import logging
-import math
 
 
-@dataclass
-class DistribConfig:
-    options: list[Any]
-    probability: list[float]
-
-
-DEFUALT_ARRIVAL_FUNC: Callable = lambda: DistribConfig(
-    options=[0.0, 0.2, 0.3], probability=[0.5, 0.4, 0.1]
-)
-DEFUALT_LENGTH_FUNC: Callable = lambda: DistribConfig(
-    options=[0.0, 0.2, 0.3], probability=[0.7, 0.2, 0.1]
-)
-DEFUALT_USAGE_FUNC: Callable = lambda: DistribConfig(
-    options=[0.1, 0.5, 1], probability=[0.7, 0.2, 0.1]
-)
-
-
-@dataclass
-class ClusterGenerator:
-    """
-    Object responsible of generating/creating ClusterObject.
-
-    :param nodes: number of nodes in cluster
-    :param jobs: number of jobs in cluster
-    :param resource: number of resource in cluster
-    :param time: max job cluster length
-    :param arrival: metadata to create jobs arrival rate
-    :param length: metadata to create jobs length
-    :param usage: metadata to create jobs uage
-    :param max_node_usage: max usage allowed for all resource in cluster
-    """
-
-    nodes: int
-    jobs: int
-    resource: int
-    time: int
-    arrival: DistribConfig = field(default_factory=DEFUALT_ARRIVAL_FUNC)
-    length: DistribConfig = field(default_factory=DEFUALT_LENGTH_FUNC)
-    usage: DistribConfig = field(default_factory=DEFUALT_USAGE_FUNC)
-    max_node_usage: float = field(default=255.0)
-
-    def __call__(self) -> ClusterObject:
-        """
-        Generate cluster object usig class attributes.
-        Creating Uniform jobs usage, represent the following: {Channel, Resource, Time}
-
-        :return: cluster object, contain all nessiery information to represent cluster
-        """
-        logging.info(
-            f"Generating Cluster with;  nodes: {self.nodes}, jobs: {self.jobs}, max node usage: {self.max_node_usage}"
-        )
-        arrival_time: npt.NDArray[np.uint32] = (
-            self.time
-            * np.random.choice(
-                self.arrival.options, size=(self.jobs), p=self.arrival.probability
-            )
-        ).astype(np.uint32)
-        job_length: npt.NDArray[np.int32] = 1 + self.time * np.random.choice(
-            self.length.options,
-            size=(self.jobs, self.resource),
-            p=self.length.probability,
-        )
-        usage: npt.NDArray[np.float64] = self.max_node_usage * np.random.choice(
-            self.usage.options, size=(self.jobs), p=self.usage.probability
-        )
-        usage: npt.NDArray[np.float64] = np.tile(
-            usage[..., np.newaxis, np.newaxis], (self.resource, self.time)
-        )
-        mask = np.arange(usage.shape[-1]) >= job_length[..., np.newaxis]
-        usage[mask] = 0.0
-        jobs: Jobs = Jobs(arrival=arrival_time, usage=usage)
-        nodes: npt.NDArray[np.float64] = np.full(
-            (self.nodes, self.resource, self.time),
-            fill_value=self.max_node_usage,
-            dtype=np.float64,
-        )
-        return ClusterObject(
-            nodes=nodes,
-            jobs=jobs,
-        )
-
-
-@dataclass
 class ClusterEnv(gym.Env):
-    """
-    Craete Gym Cluster Object.
-    Allow To Represent Cluster logic: Scheduling, TimeTick, Generating Job.
-    Job & Node reperesentation should be similar.
 
-    :param nodes: List of nodes repersentation
-    :param jobs: List of job representation
-    :param resource: Number of Job/Node resource type
-    :param max_time: Max Job Run time
-    :param cooldown: Render cooldown between stepes
-    """
+    metadata = {"render_modes": ["human", "rgb_array", ''], "render_fps": 4}
 
-    nodes: int
-    jobs: int
-    resource: int
-    max_time: int
-    cooldown: float = field(default=1.0)
-    _cluster: ClusterObject = field(init=False)
-    _logger: logging.Logger = field(init=False)
-    _generator: ClusterGenerator = field(init=False)
-    _renderer: Optional[Any] = field(init=False, default=None)
-    _action_error: Optional[Tuple[int, int]] = field(default=None)
-    INNCORECT_ACTION_REWARD: int = field(default=-100)
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
-    render_mode: Optional[str] = field(default=None)
+    def _action_shape(self) -> gym.spaces.Discrete:
+        return gym.spaces.Discrete(len(self.nodes) * len(self.jobs) + 1)
 
-    @property
-    def time(self) -> int:
-        """Current cluster time."""
-        return self._cluster.time
-
-    def __post_init__(self):
-        super(ClusterEnv, self).__init__()
-        self._logger = logging.getLogger(self.__class__.__name__)
-        self._generator = ClusterGenerator(
-            nodes=self.nodes, jobs=self.jobs, resource=self.resource, time=self.max_time
-        )
-        self._cluster: ClusterObject = self._generator()
-        self.observation_space: gym.Space = self._observation_space(self._cluster)
-        self.action_space: gym.Space = self._action_space(self._cluster)
-        if self.render_mode in ("human", "rgb_array"):
-            try:
-                from clusterenv.envs.render import ClusterRenderer
-
-                self._renderer = ClusterRenderer(
-                    nodes=self.nodes,
-                    jobs=self.jobs,
-                    resource=self.resource,
-                    time=self.max_time,
-                    cooldown=self.cooldown,
-                )
-            except ImportError as e:
-                print(e)
-                raise ImportError(
-                    "Render method use mathplotlib pleas install using 'pip install matplotlib'"
-                )
-
-    @classmethod
-    def _mask_queue_observation(cls, cluster: ClusterObject):
-        """
-        Mask PENDING jobs.
-
-        :param cluster: Cluster Object
-        """
-        obs: dict[str, npt.NDArray] = cls._observation(cluster)
-        pendeing_jobs: npt.NDArray = cluster.jobs.status == JobStatus.PENDING
-        obs["Queue"][~pendeing_jobs] = 0
-        return obs
-
-    @classmethod
-    def _observation(cls, cluster: ClusterObject) -> dict:
-        """
-        Cluster Objservation
-
-        :param cluster: cluster state
-
-        :return: cluster usage;queue;nodes;job-status
-        """
-
-        return dict(
-            Usage=cluster.usage,
-            Queue=cluster.queue,
-            Nodes=cluster.nodes.copy(),
-            Status=cluster.jobs_status.astype(np.intp),
-        )
-
-    @classmethod
-    def _action_space(cls, cluster: ClusterObject) -> gym.spaces.Discrete:
-        """
-        Env action space.
-
-        :param cluster: cluster state
-
-        :return: action space
-        """
-        return gym.spaces.Discrete((cluster.n_nodes * cluster.n_jobs) + 1)
-
-    @classmethod
-    def _observation_space(cls, cluster: ClusterObject) -> gym.spaces.Dict:
-        """
-        Env observation space.
-
-        :param cluster: cluster state
-
-        :return: observation space
-        """
-        max_val = np.max(cluster.nodes)
+    def _observation_shape(self) -> gym.spaces.Dict:
+        max_val: float = np.max(self.nodes.original)
         return gym.spaces.Dict(
             dict(
                 Usage=gym.spaces.Box(
-                    low=0, high=max_val, shape=cluster.usage.shape, dtype=np.float64
+                    low=0, high=max_val, shape=self.jobs.usage.shape, dtype=float
                 ),
                 Queue=gym.spaces.Box(
                     low=-1,
                     high=max_val,
-                    shape=cluster.jobs.usage.shape,
-                    dtype=np.float64,
+                    shape=self.jobs.usage.shape,
+                    dtype=float,
                 ),
                 Nodes=gym.spaces.Box(
-                    low=0, high=max_val, shape=cluster.nodes.shape, dtype=np.float64
+                    low=0, high=max_val, shape=self.nodes.original.shape, dtype=float
                 ),
                 Status=gym.spaces.Box(
-                    low=0, high=5, shape=cluster.jobs_status.shape, dtype=np.intp
+                    low=0, high=5, shape=self.jobs.status.shape, dtype=float
                 ),
             )
         )
 
-    def convert_action(self, idx: int) -> tuple[int, int]:
-        """
-        Convert 1D action into 2D Matrix action.
-
-        :param idx: flatten action
-
-        :return: matrix action idxes
-        """
-        return idx % self._cluster.n_nodes, idx // self._cluster.n_nodes
-
-    def convert_to_action(self, n_idx: int, j_idx: int) -> int:
-        """
-        Convert 2D Matrix action into 1D action.
-
-        :param n_idx: node index
-        :param j_idx: job index
-
-        :return: 2d matrix action
-        """
-        return j_idx * self._cluster.n_nodes + n_idx
-
-    def step(
-        self, action: int
-    ) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
-        """
-        Make Cluster Step. Each step is a subtime action, in other words player can pick inf action and time will not tick.
-        Time will only tick when player take time tick action. Any other action is a scheduling action.
-        When player take not possible action an error flag of self._action_error will be activate for wrapper Env (None).
-
-        :param action: flatten action
-
-        :return: GYM step
-        """
-        reward: float = 0
-        tick_action: bool = action == 0
+    def __init__(
+        self,
+        n_nodes: int,
+        n_jobs: int,
+        n_resource: int,
+        max_time: int,
+        node_gen: NodeGenerator = NodeGenerator,
+        job_gen: JobGenerator = JobGenerator,
+        render_mode: str = '',
+        cooldown: float = 0.05
+    ):
+        super(ClusterEnv, self).__init__()
+        self._time = 0
+        self._mapper = np.arange(n_jobs)
+        self.render_mode = render_mode
+        self._n_resource = n_resource
+        self._max_time = max_time
+        self._n_nodes, self._n_jobs = n_nodes, n_jobs
+        self._node_gen, self._job_gen = node_gen, job_gen
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._plotter = ClusterRenderer(
+            nodes=self._n_nodes,
+            jobs=self._n_jobs,
+            resource=self._n_resource,
+            time=self._max_time,
+            cooldown=cooldown,
+        )
         self._action_error = None
-        if tick_action:
-            self._logger.info(f"Tick Cluster ...")
-            self._cluster.tick()
-        else:
-            prefix: str = ""
-            n_idx, j_idx = self.convert_action(action - 1)
-            if not self._cluster.schedule(n_idx=n_idx, j_idx=j_idx):
-                self._action_error = (n_idx, j_idx)
-                prefix = "Can't"
-                reward += self.INNCORECT_ACTION_REWARD
-            logging.info(f"{prefix} Allocating job {j_idx} into node {n_idx}")
-        reward -= len(self._cluster.queue) / 2
-        terminated: bool = self._cluster.all_jobs_complete()
-        self.render()
-        return (
-            self._mask_queue_observation(self._cluster),
-            reward,
-            terminated,
-            False,
-            {},
+        self._action_correct = None
+        self.nodes: Nodes = self._node_gen.generate(
+            self._n_nodes, self._n_resource, self._max_time, 255.0
+        )
+        self.jobs: Jobs = self._job_gen.generate(
+            self._n_jobs, self._n_resource, self._max_time, 255.0
+        )
+        self.observation_space = self._observation_shape()
+        self.action_space = self._action_shape()
+
+    def _reorganize_observation(self) -> None:
+        self._mapper = self._mapper[np.argsort(self.jobs.status[self._mapper], kind='stable')]
+        self.jobs.reorganize(self._mapper)
+        # TODO: Update jobs
+        self._observation = dict(
+            Usage=self.nodes.usage,
+            Nodes=self.nodes.original,
+            Status=self.jobs.status,
+            Queue=self.jobs.usage,
         )
 
-    def reset(
-        self, *, seed: int | None = None, options: dict[str, Any] | None = None
-    ) -> tuple[Any, dict[str, Any]]:
+    def _tick(self) -> None:
+        """Forward cluster time by tick.
+        Updating running time of all running jobs by one, show new income jobs.
         """
-        Reset Gym Env. Will create a new cluster object using Generator.
+        self._logger.info(f"Tick {self._time}->{self._time + 1}")
+        self.jobs.inc(JobStatus.RUNNING)
+        self._time += 1
+        complete_jobs_idx: np.array = self.jobs.check_complete_jobs()
+        arrived_jobs_idx: np.array = self.jobs.check_arrived_jobs(self._time)
+        self._logger.info(f"Receive new jobs: {arrived_jobs_idx}")
+        self._logger.info(f"Complete jobs: {complete_jobs_idx}")
+        self.nodes.tick()
 
-        :return: GYM step
-        """
-        self._cluster = self._generator()
-        self.render()
-        return self._mask_queue_observation(self._cluster), {}
+    def _schedule(self, n_idx: int, j_idx: int) -> bool:
+        job_status, _, job_usage = self.jobs[j_idx]
+        match job_status:
+            case JobStatus.PENDING:
+                free_n_space: np.ndarray = self.nodes.free_space(n_idx)
+                if job_can_be_schedule := bool(np.all(free_n_space >= job_usage)):
+                    self.nodes[n_idx] += job_usage
+                    self.jobs[j_idx] = self.jobs[j_idx].change_status(JobStatus.RUNNING)
+                    logging.info(f"Succeed Allocated j.{j_idx} to n.{n_idx}")
+                else:
+                    logging.info(f"Can't Allocate j.{j_idx} n.{n_idx}, not enough resource")
+                return job_can_be_schedule
+            case _:
+                logging.info(f"Can't Allocate j.{j_idx} with status {JobStatus(job_status).name}")
+                return False
 
-    def render(self) -> RenderFrame | list[RenderFrame] | None:
-        """
-        Render Env using mathplotlib.
-        """
-        if self._renderer:
+    @overload
+    def _convert_action(self, n_idx: int, j_idx: int) -> int: ...
+
+    @overload
+    def _convert_action(self, action: int) -> tuple[int, int]: ...
+
+    def _convert_action(self, *args):
+        n_nodes: int = len(self.nodes)
+        if len(args) == 2 and all(isinstance(arg, int) for arg in args):
+            n_idx, j_idx = args
+            return j_idx * n_nodes + n_idx
+        elif len(args) == 1 and isinstance(args[0], int):
+            action = args[0]
+            return action % n_nodes, action // n_nodes
+        else:
+            raise TypeError("Invalid arguments for convert_action method")
+
+    def _has_terminate(self):
+        return len(self.jobs.index_by_status(JobStatus.COMPLETE)) == len(self.jobs)
+
+    def _has_additional_jobs(self):
+        n_pending: int = len(self.jobs.index_by_status(JobStatus.COMPLETE))
+        n_complete: int = len(self.jobs.index_by_status(JobStatus.RUNNING))
+        return n_pending + n_complete != len(self.jobs)
+
+    def _total_wait_time(self):
+        return self.jobs.total_pending_time()
+
+    def render(self) -> RenderFrame | List[RenderFrame] | None:
+        if self.render_mode:
+            fig = self._plotter(
+                self._observation,
+                current_time=self._time,
+                error=self._action_error,
+                correct=self._action_correct,
+            )
             if self.render_mode == "rgb_array":
-                fig = self._renderer(
-                    self._observation(self._cluster),
-                    current_time=self.time,
-                    error=self._action_error,
-                )
-                fig.canvas.draw()
                 buf = fig.canvas.tostring_rgb()
                 width, height = fig.canvas.get_width_height()
-                return np.frombuffer(buf, dtype=np.uint8).reshape((height, width, 3))
+                expected_height = int(fig.get_figheight() * fig.dpi)
+                expected_width = int(fig.get_figwidth() * fig.dpi)
+                width_mult: int = expected_width // width
+                height_mult: int = expected_height // height
+                return np.frombuffer(buf, dtype=np.uint8).reshape(
+                    (height_mult * height, width_mult * width, 3)
+                )
+
+    def reset(
+            self, *, seed: int | None = None, options: dict[str, Any] | None = None
+    ) -> tuple[Any, dict[str, Any]]:
+        self.nodes: Nodes = self._node_gen.generate(
+            self._n_nodes, self._n_resource, self._max_time, 255.0
+        )
+        self.jobs: Jobs = self._job_gen.generate(
+            self._n_jobs, self._n_resource, self._max_time, 255.0
+        )
+        self.jobs.check_arrived_jobs(self._time)
+        self._reorganize_observation()
+        self.render()
+        return self._observation, {}
+
+    def step(
+        self, action: ActType
+    ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
+        """
+        Make Cluster Step. Each step is a sub-time action, in other words player can pick inf action and time will not tick.
+        Time will only tick when player take time tick action. Any other action is a scheduling action.
+        When player take not possible action an error flag of self._action_error will be activated for wrapper Env (None).
+
+        :param action: flatten action
+        """
+        info: dict = {}
+        self._action_error = None
+        self._action_correct = None
+        self.render()
+        if bool(action == 0):
+            self._logger.info(f"Tick Cluster ...")
+            self._tick()
+        else:
+            n_idx, j_idx = self._convert_action(int(action) - 1)
+            if not self._schedule(n_idx, j_idx):
+                self._action_error = (n_idx, j_idx)
+            else:
+                self._action_correct = (n_idx, j_idx)
+        terminate: bool = self._has_terminate()
+        truncated: bool = not self._has_additional_jobs()
+        reward: float = -self._total_wait_time()
+        self._reorganize_observation()
+        self.render()
+        return self._observation, reward, terminate, truncated, info
