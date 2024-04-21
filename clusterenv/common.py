@@ -134,7 +134,8 @@ class Cluster:
         match job_status:
             case JobStatus.PENDING:
                 free_n_space: np.ndarray = self.nodes.free_space(n_idx)
-                if job_can_be_schedule := bool(np.all(free_n_space >= job_usage)):
+                job_can_be_schedule: bool = bool(np.all(free_n_space >= job_usage))
+                if job_can_be_schedule:
                     self.nodes[n_idx] += job_usage
                     self.jobs[j_idx] = self.jobs[j_idx].change_status(JobStatus.RUNNING)
                     logging.info(f"Succeed Allocated j.{j_idx} to n.{n_idx}")

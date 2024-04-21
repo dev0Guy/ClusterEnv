@@ -48,7 +48,7 @@ class ClusterRenderer:
         n_columns: int = self.nodes_n_columns + self.jobs_n_columns
 
         self.fig, self.axs = plt.subplots(
-            n_rows, n_columns, figsize=(12, 6), facecolor="white"
+            n_rows, n_columns, figsize=(8, 4), facecolor="white"
         )
         self._hide_unused(
             self.axs,

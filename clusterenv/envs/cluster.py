@@ -9,25 +9,6 @@ import logging
 
 
 class ClusterEnv(gym.Env):
-<<<<<<< Updated upstream
-=======
-    nodes: int
-    jobs: int
-    resource: int
-    max_time: int
-    cooldown: float = field(default=1.0)
-    _cluster: ClusterObject = field(init=False)
-    _logger: logging.Logger = field(init=False)
-    _generator: ClusterGenerator = field(init=False)
-    _renderer: ClusterRenderer = field(init=False)
-    _action_error: tuple[int, int] | None = field(default=None)
-    INNCORECT_ACTION_REWARD: int = field(default=-100)
-    metadata: dict = field(default_factory=create_metadata)
-    render_mode: str = field(default="rgb_array")
-    @property
-    def time(self) -> int:
-        return self._cluster.time
->>>>>>> Stashed changes
 
     metadata = {"render_modes": ["human", "rgb_array", ''], "render_fps": 4}
 
