@@ -8,8 +8,108 @@ import numpy.typing as npt
 import numpy as np
 import math
 
+from numba import njit, jit
 
-@dataclass
+CMAP_COLORS: tuple = ("copper", "gray", "twilight", "summer")
+REGULAR_COLOR: str = "copper"
+REGULAR_TITLE_COLOR: str = "black"
+ERROR_COLOR: str = "RdGy"
+CORRECT_COLOR: str = "Greens"
+ERROR_TITLE_COLOR: str = "red"
+
+
+def _hide_unused(axs: Axes,  nodes: np.array, jobs: np.array, nodes_n_columns: int):
+    nodes_to_remove: list = axs[:, :nodes_n_columns].flatten()[nodes:]
+    jobs_to_remove: list = axs[:, nodes_n_columns:].flatten()[jobs:]
+    for ax in nodes_to_remove:
+        plt.delaxes(ax)
+    for ax in jobs_to_remove:
+        plt.delaxes(ax)
+
+
+@jit(forceobj=True)
+def _draw(
+    matrix: np.ndarray,
+    /,
+    *,
+    title: str,
+    title_color: str,
+    ax: Axes,
+    time: int,
+    resource: int,
+    cmap: str,
+):
+    ax.imshow(matrix, cmap=cmap, vmin=0, vmax=100)
+    ax.set_title(title, fontsize=10, color=title_color)
+    ax.set_xticks(np.arange(0, time, 0.5), minor=True)
+    ax.set_yticks(np.arange(0, resource, 0.5), minor=True)
+    ax.tick_params(which="minor", length=0)
+    ax.grid(which="both", color="black", linestyle="-", linewidth=0.5, alpha=0.3)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+
+@jit(forceobj=True)
+def _draw_job(
+    job: np.ndarray,
+    /,
+    *,
+    title_color: str,
+    idx: int,
+    ax: Axes,
+    time: int,
+    resource: int,
+    cmap: str,
+    status: JobStatus,
+):
+    title: str = f"[J.{idx}]"
+    cmap = cmap if cmap == ERROR_COLOR else CMAP_COLORS[status]
+    _draw(
+        job,
+        title=title,
+        title_color=title_color,
+        ax=ax,
+        time=time,
+        resource=resource,
+        cmap=cmap,
+    )
+
+
+@jit(forceobj=True)
+def _draw_node(
+    node: np.ndarray,
+    /,
+    *,
+    title_color: str,
+    idx: int,
+    ax: Axes,
+    time: int,
+    resource: int,
+    cmap: str,
+):
+    title: str = f"[N.{idx}]"
+    _draw(
+        node,
+        title=title,
+        title_color=title_color,
+        ax=ax,
+        time=time,
+        resource=resource,
+        cmap=cmap,
+    )
+
+
+def color_map(error, correct):
+    def inner(idx, pos):
+        if error and idx == error[pos]:
+            return ERROR_COLOR
+        elif correct and idx == correct[pos]:
+            return CORRECT_COLOR
+        return REGULAR_COLOR
+    return inner
+
+
+@dataclass(slots=False)
 class ClusterRenderer:
     """
     Craete Gym Cluster Object.
@@ -30,12 +130,6 @@ class ClusterRenderer:
     cooldown: float
     fig: Figure = field(init=False)
     axs: npt.NDArray = field(init=False)
-    CMAP_COLORS: tuple = ("copper", "gray", "twilight", "summer")
-    REGULAR_COLOR: str = "copper"
-    REGULAR_TITLE_COLOR: str = "black"
-    ERROR_COLOR: str = "RdGy"
-    CORRECT_COLOR: str = "Greens"
-    ERROR_TITLE_COLOR: str = "red"
 
     def __post_init__(self):
         self.jobs_n_columns: int = math.ceil(self.jobs**0.5)
@@ -50,103 +144,12 @@ class ClusterRenderer:
         self.fig, self.axs = plt.subplots(
             n_rows, n_columns, figsize=(8, 4), facecolor="white"
         )
-        self._hide_unused(
+        _hide_unused(
             self.axs,
             nodes=self.nodes,
             jobs=self.jobs,
             nodes_n_columns=self.nodes_n_columns,
         )
-
-    @classmethod
-    def _hide_unused(cls, axs: np.ndarray, nodes: int, jobs: int, nodes_n_columns: int):
-        nodes_to_remove: Iterable[Axes] = axs[:, :nodes_n_columns].flatten()[nodes:]
-        jobs_to_remove: Iterable[Axes] = axs[:, nodes_n_columns:].flatten()[jobs:]
-        for ax in nodes_to_remove:
-            plt.delaxes(ax)
-        for ax in jobs_to_remove:
-            plt.delaxes(ax)
-
-    @classmethod
-    def _draw(
-        cls,
-        matrix: np.ndarray,
-        /,
-        *,
-        title: str,
-        title_color: str,
-        ax: Axes,
-        time: int,
-        resource: int,
-        cmap: str,
-    ):
-        ax.imshow(matrix, cmap=cmap, vmin=0, vmax=100)
-        ax.set_title(title, fontsize=10, color=title_color)
-        ax.set_xticks(np.arange(0, time, 0.5), minor=True)
-        ax.set_yticks(np.arange(0, resource, 0.5), minor=True)
-        ax.tick_params(which="minor", length=0)
-        ax.grid(which="both", color="black", linestyle="-", linewidth=0.5, alpha=0.3)
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-    @classmethod
-    def _draw_job(
-        cls,
-        job: np.ndarray,
-        /,
-        *,
-        title_color: str,
-        idx: int,
-        ax: Axes,
-        time: int,
-        resource: int,
-        cmap: str,
-        status: JobStatus,
-    ):
-        title: str = f"[J.{idx}]"
-        cmap = cmap if cmap == cls.ERROR_COLOR else cls.CMAP_COLORS[status]
-        cls._draw(
-            job,
-            title=title,
-            title_color=title_color,
-            ax=ax,
-            time=time,
-            resource=resource,
-            cmap=cmap,
-        )
-
-    @classmethod
-    def _draw_node(
-        cls,
-        node: np.ndarray,
-        /,
-        *,
-        title_color: str,
-        idx: int,
-        ax: Axes,
-        time: int,
-        resource: int,
-        cmap: str,
-    ):
-        title: str = f"[N.{idx}]"
-        cls._draw(
-            node,
-            title=title,
-            title_color=title_color,
-            ax=ax,
-            time=time,
-            resource=resource,
-            cmap=cmap,
-        )
-
-    @classmethod
-    def color_map(cls, error, correct):
-        def inner(idx, pos):
-            if error and idx == error[pos]:
-                return cls.ERROR_COLOR
-            elif correct and idx == correct[pos]:
-                return cls.CORRECT_COLOR
-            return cls.REGULAR_COLOR
-        return inner
 
     def __call__(
         self,
@@ -161,16 +164,11 @@ class ClusterRenderer:
         nodes: npt.NDArray = obs["Usage"]
         queue: npt.NDArray = obs["Queue"]
         status: npt.NDArray[np.uint32] = obs["Status"]
-        cmap_color = self.color_map(error, correct)
-        # cmap_color: Callable[[int, int], str] = (
-        #     lambda idx, pos: self.ERROR_COLOR
-        #     if error and idx == error[pos]
-        #     else self.REGULAR_COLOR
-        # )
+        cmap_color = color_map(error, correct)
         title_color: Callable[[int, int], str] = (
-            lambda idx, pos: self.ERROR_TITLE_COLOR
+            lambda idx, pos: ERROR_TITLE_COLOR
             if error and idx == error[pos]
-            else self.REGULAR_TITLE_COLOR
+            else REGULAR_TITLE_COLOR
         )
         node_ax: Callable[[int], npt.NDArray] = lambda n_idx: self.axs[
             n_idx // self.nodes_n_columns, n_idx % self.nodes_n_columns
@@ -181,7 +179,7 @@ class ClusterRenderer:
         ]
         # update matries
         for n_idx, node in enumerate(nodes):
-            self._draw_node(
+            _draw_node(
                 node,
                 title_color=title_color(n_idx, 0),
                 idx=n_idx,
@@ -191,7 +189,7 @@ class ClusterRenderer:
                 cmap=cmap_color(n_idx, 0),
             )
         for j_idx, job in enumerate(queue):
-            self._draw_job(
+            _draw_job(
                 job,
                 title_color=title_color(j_idx, 1),
                 idx=j_idx,

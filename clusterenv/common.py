@@ -1,21 +1,44 @@
-from dataclasses import dataclass, field
+from numba import float64, int32, njit, jit, deferred_type
+from numba.experimental import jitclass
 import numpy as np
-import numpy.typing as npt
-from clusterenv._types import Jobs, JobStatus, Nodes
-from typing import Protocol
-import logging
 import gymnasium as gym
+from clusterenv._types import JobStatus
+from typing import Protocol, Dict
+from clusterenv._types import Nodes, Jobs
+import logging
+
+
+@njit
+def _node_generate(n: int, r: int, t: int, max_usage: float) -> np.ndarray:
+    nodes: np.array = np.full(
+        (n, r, t),
+        fill_value=max_usage,
+        dtype=float,
+    )
+    return nodes
+
+
+def _job_generate(n: int, r: int, t: int, max_usage: float, arrival: Dict[str, float], length: Dict[str, float], usage: Dict[str, float]) -> tuple[np.ndarray, np.array]:
+    submission: np.array = t * np.random.choice(
+        arrival["option"], size=n, p=arrival["prob"]
+    ).astype(int)
+    length: np.array = 1 + t * np.random.choice(
+        length["option"], size=(n, r), p=length["prob"]
+    )
+    usage: np.array = max_usage * np.random.choice(
+        usage["option"], size=n, p=usage["prob"]
+    ).astype(float)
+    usage: np.ndarray = np.tile(usage[..., np.newaxis, np.newaxis], (r, t))
+    mask = np.arange(usage.shape[-1]) >= length[..., np.newaxis]
+    usage[mask] = 0.0
+    return usage, submission
 
 
 class NodeGenerator(Protocol):
+
     @classmethod
     def generate(cls, n: int, r: int, t: int, max_usage: float) -> Nodes:
-        nodes: npt.NDArray[float] = np.full(
-            (n, r, t),
-            fill_value=max_usage,
-            dtype=float,
-        )
-        return Nodes(nodes)
+        return Nodes(_node_generate(n, r, t, max_usage))
 
 
 class JobGenerator(Protocol):
@@ -25,40 +48,31 @@ class JobGenerator(Protocol):
 
     @classmethod
     def generate(cls, n: int, r: int, t: int, max_usage: float) -> Jobs:
-        submission: np.array = t * np.random.choice(
-            cls.ARRIVAL_TIME["option"], size=n, p=cls.ARRIVAL_TIME["prob"]
-        ).astype(int)
-        length: np.array = 1 + t * np.random.choice(
-            cls.LENGTH["option"], size=(n, r), p=cls.LENGTH["prob"]
-        )
-        usage: np.array = max_usage * np.random.choice(
-            cls.USAGE["option"], size=n, p=cls.USAGE["prob"]
-        ).astype(float)
-        usage: np.ndarray = np.tile(usage[..., np.newaxis, np.newaxis], (r, t))
-        mask = np.arange(usage.shape[-1]) >= length[..., np.newaxis]
-        usage[mask] = 0.0
-        return Jobs(usage=usage, submission=submission)
+        return Jobs(*_job_generate(n, r, t, max_usage, length=cls.LENGTH, arrival=cls.ARRIVAL_TIME, usage=cls.USAGE))
 
 
-@dataclass(slots=True)
+spec = [
+    ('nodes', float64[:, :, :]),
+    ('jobs', float64[:, :, :]),
+    ('_logger', float64),
+    ('_run_time', float64[:]),
+    ('_max_val', float64),
+    ('_time', int32)
+]
+
+@jitclass(spec)
 class Cluster:
-    """
-    Attributes
-    ------
-        nodes (Nodes): TODO
-        jobs (Jobs): TODO
 
-    """
-
-    nodes: Nodes
-    jobs: Jobs
-    _logger: logging.Logger = field(init=False)
-    _run_time: npt.NDArray[int] = field(init=False)
-    _max_val: float = field(init=False)
-    _time: int = 0
+    def __init__(self, nodes, jobs):
+        self.nodes = nodes
+        self.jobs = jobs
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._run_time = np.zeros(len(self.jobs)).astype(float)
+        self._max_val = np.max(self.nodes)
+        self.jobs.check_arrived_jobs(self._time)
 
     @property
-    def observation(self) -> dict:
+    def observation(self):
         return dict(
             Usage=self.nodes.usage,
             Queue=self.jobs.usage,
@@ -67,18 +81,18 @@ class Cluster:
         )
 
     @property
-    def time(self) -> int:
+    def time(self):
         return self._time
 
     @property
-    def max_usage(self) -> float:
+    def max_usage(self):
         return self._max_val
 
-    def action_space(self) -> gym.Space:
+    def action_space(self):
         return gym.spaces.Discrete(len(self.nodes) * len(self.jobs) + 1)
 
-    def observation_shape(self) -> gym.Space:
-        max_val: float = np.max(self.nodes.original)
+    def observation_shape(self):
+        max_val = np.max(self.nodes.original)
         return gym.spaces.Dict(
             dict(
                 Usage=gym.spaces.Box(
@@ -99,49 +113,39 @@ class Cluster:
             )
         )
 
-    def has_terminate(self) -> bool:
+    def has_terminate(self):
         return len(self.jobs.index_by_status(JobStatus.COMPLETE)) == len(self.jobs)
 
-    def has_additional_jobs(self) -> bool:
-        n_pending: int = len(self.jobs.index_by_status(JobStatus.COMPLETE))
-        n_complete: int = len(self.jobs.index_by_status(JobStatus.RUNNING))
+    def has_additional_jobs(self):
+        n_pending = len(self.jobs.index_by_status(JobStatus.COMPLETE))
+        n_complete = len(self.jobs.index_by_status(JobStatus.RUNNING))
         return n_pending + n_complete != len(self.jobs)
 
     def total_wait_time(self):
         return self.jobs.total_pending_time()
 
-    def __post_init__(self):
-        self._logger = logging.getLogger(self.__class__.__name__)
-        self._run_time = np.zeros(len(self.jobs)).astype(float)
-        self._max_val = np.max(self.nodes)
-        self.jobs.check_arrived_jobs(self._time)
-
-    def tick(self) -> None:
-        """Forward cluster time by tick.
-        Updating running time of all running jobs by one, show new income jobs.
-        """
+    def tick(self):
         self._logger.info(f"Tick {self._time}->{self._time+1}")
         self.jobs.inc(JobStatus.RUNNING)
         self._time += 1
-        complete_jobs_idx: npt.ArrayLike[int] = self.jobs.check_complete_jobs()
-        arrived_jobs_idx: npt.ArrayLike[int] = self.jobs.check_arrived_jobs(self._time)
+        complete_jobs_idx = self.jobs.check_complete_jobs()
+        arrived_jobs_idx = self.jobs.check_arrived_jobs(self._time)
         self._logger.info(f"Receive new jobs: {arrived_jobs_idx}")
         self._logger.info(f"Complete jobs: {complete_jobs_idx}")
         self.nodes.tick()
 
-    def schedule(self, n_idx: int, j_idx: int) -> bool:
+    def schedule(self, n_idx, j_idx):
         job_status, _, job_usage = self.jobs[j_idx]
-        match job_status:
-            case JobStatus.PENDING:
-                free_n_space: np.ndarray = self.nodes.free_space(n_idx)
-                job_can_be_schedule: bool = bool(np.all(free_n_space >= job_usage))
-                if job_can_be_schedule:
-                    self.nodes[n_idx] += job_usage
-                    self.jobs[j_idx] = self.jobs[j_idx].change_status(JobStatus.RUNNING)
-                    logging.info(f"Succeed Allocated j.{j_idx} to n.{n_idx}")
-                else:
-                    logging.info(f"Can't Allocate j.{j_idx} n.{n_idx}, not enough resource")
-                return job_can_be_schedule
-            case _:
-                logging.info(f"Can't Allocate j.{j_idx} with status {JobStatus(job_status).name}")
-                return False
+        if job_status == JobStatus.PENDING:
+            free_n_space = self.nodes.free_space(n_idx)
+            job_can_be_schedule = np.all(free_n_space >= job_usage)
+            if job_can_be_schedule:
+                self.nodes[n_idx] += job_usage
+                self.jobs[j_idx] = self.jobs[j_idx].change_status(JobStatus.RUNNING)
+                logging.debug(f"Succeed Allocated j.{j_idx} to n.{n_idx}")
+            else:
+                logging.debug(f"Can't Allocate j.{j_idx} n.{n_idx}, not enough resource")
+            return job_can_be_schedule
+        else:
+            logging.debug(f"Can't Allocate j.{j_idx} with status {JobStatus(job_status).name}")
+            return False

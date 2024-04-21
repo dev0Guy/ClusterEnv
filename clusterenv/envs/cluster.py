@@ -90,13 +90,13 @@ class ClusterEnv(gym.Env):
         """Forward cluster time by tick.
         Updating running time of all running jobs by one, show new income jobs.
         """
-        self._logger.info(f"Tick {self._time}->{self._time + 1}")
+        self._logger.debug(f"Tick {self._time}->{self._time + 1}")
         self.jobs.inc(JobStatus.RUNNING)
         self._time += 1
         complete_jobs_idx: np.array = self.jobs.check_complete_jobs()
         arrived_jobs_idx: np.array = self.jobs.check_arrived_jobs(self._time)
-        self._logger.info(f"Receive new jobs: {arrived_jobs_idx}")
-        self._logger.info(f"Complete jobs: {complete_jobs_idx}")
+        self._logger.debug(f"Receive new jobs: {arrived_jobs_idx}")
+        self._logger.debug(f"Complete jobs: {complete_jobs_idx}")
         self.nodes.tick()
 
     def _schedule(self, n_idx: int, j_idx: int) -> bool:
@@ -107,12 +107,12 @@ class ClusterEnv(gym.Env):
                 if job_can_be_schedule := bool(np.all(free_n_space >= job_usage)):
                     self.nodes[n_idx] += job_usage
                     self.jobs[j_idx] = self.jobs[j_idx].change_status(JobStatus.RUNNING)
-                    logging.info(f"Succeed Allocated j.{j_idx} to n.{n_idx}")
+                    logging.debug(f"Succeed Allocated j.{j_idx} to n.{n_idx}")
                 else:
-                    logging.info(f"Can't Allocate j.{j_idx} n.{n_idx}, not enough resource")
+                    logging.debug(f"Can't Allocate j.{j_idx} n.{n_idx}, not enough resource")
                 return job_can_be_schedule
             case _:
-                logging.info(f"Can't Allocate j.{j_idx} with status {JobStatus(job_status).name}")
+                logging.debug(f"Can't Allocate j.{j_idx} with status {JobStatus(job_status).name}")
                 return False
 
     @overload
@@ -191,7 +191,7 @@ class ClusterEnv(gym.Env):
         self._action_correct = None
         self.render()
         if bool(action == 0):
-            self._logger.info(f"Tick Cluster ...")
+            self._logger.debug(f"Tick Cluster ...")
             self._tick()
         else:
             n_idx, j_idx = self._convert_action(int(action) - 1)
