@@ -130,8 +130,12 @@ class ClusterRenderer:
     cooldown: float
     fig: Figure = field(init=False)
     axs: npt.NDArray = field(init=False)
+    render_mode: str = ''
 
     def __post_init__(self):
+        print(self.render_mode)
+        if self.render_mode != 'human':
+            plt.ioff()
         self.jobs_n_columns: int = math.ceil(self.jobs**0.5)
         self.nodes_n_columns: int = math.ceil(self.nodes**0.5)
 

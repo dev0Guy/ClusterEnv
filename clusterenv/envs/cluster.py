@@ -63,6 +63,7 @@ class ClusterEnv(gym.Env):
             resource=self._n_resource,
             time=self._max_time,
             cooldown=cooldown,
+            render_mode=render_mode
         )
         self._action_error = None
         self._action_correct = None
@@ -152,6 +153,7 @@ class ClusterEnv(gym.Env):
                 correct=self._action_correct,
             )
             if self.render_mode == "rgb_array":
+
                 buf = fig.canvas.tostring_rgb()
                 width, height = fig.canvas.get_width_height()
                 expected_height = int(fig.get_figheight() * fig.dpi)
