@@ -182,7 +182,7 @@ class ClusterEnv(gym.Env):
         """
         Make Cluster Step. Each step is a sub-time action, in other words player can pick inf action and time will not tick.
         Time will only tick when player take time tick action. Any other action is a scheduling action.
-        When player take not possible action an error flag of self._action_error will be activated for wrapper Env (None).
+        When player take not possible action an error flag of self._action_error will be activated for wrappers Env (None).
 
         :param action: flatten action
         """

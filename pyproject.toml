@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "clusterenv"
-version = "0.3.2"
+version = "0.3.22"
 description = "ClusterEnv is a Python Gym environment designed to simulate and model the management and optimization of computing clusters. In the realm of distributed computing."
 authors = ["Guy Arieli"]
 license = "MIT"
@@ -8,7 +8,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-gymnasium = "^0.29.1"
+gymnasium = ">=0.28.0,<0.29.0"
 matplotlib = "^3.8.3"
 numba = "^0.57.1"
 

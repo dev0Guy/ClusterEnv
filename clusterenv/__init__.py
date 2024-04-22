@@ -1,5 +1,5 @@
 from gymnasium.envs.registration import register
-
+from clusterenv import wrappers
 register(
     id="cluster-v0",
     entry_point="clusterenv.envs.cluster:ClusterEnv",
