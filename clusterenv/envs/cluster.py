@@ -46,7 +46,7 @@ class ClusterEnv(gym.Env):
         node_gen: NodeGenerator = NodeGenerator,
         job_gen: JobGenerator = JobGenerator,
         render_mode: str = '',
-        cooldown: float = 0.05
+        cooldown: float = 1e-5
     ):
         super(ClusterEnv, self).__init__()
         self._time = 0
