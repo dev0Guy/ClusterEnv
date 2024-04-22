@@ -45,4 +45,3 @@ class ConcatenateObservationDict(gym.ObservationWrapper):
     def __init__(self, env: gym.Env):
         super().__init__(env)
         self.observation_space = self._get_observation_space()
-        print(self.observation_space)
