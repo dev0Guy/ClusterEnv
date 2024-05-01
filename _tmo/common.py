@@ -2,9 +2,9 @@ from numba import float64, int32, njit, jit, deferred_type
 from numba.experimental import jitclass
 import numpy as np
 import gymnasium as gym
-from clusterenv._types import JobStatus
+from _tmo.types import JobStatus
 from typing import Protocol, Dict
-from clusterenv._types import Nodes, Jobs
+from _tmo.types import Nodes, Jobs
 import logging
 
 
@@ -18,7 +18,15 @@ def _node_generate(n: int, r: int, t: int, max_usage: float) -> np.ndarray:
     return nodes
 
 
-def _job_generate(n: int, r: int, t: int, max_usage: float, arrival: Dict[str, float], length: Dict[str, float], usage: Dict[str, float]) -> tuple[np.ndarray, np.array]:
+def _job_generate(
+    n: int,
+    r: int,
+    t: int,
+    max_usage: float,
+    arrival: Dict[str, float],
+    length: Dict[str, float],
+    usage: Dict[str, float],
+) -> tuple[np.ndarray, np.array]:
     submission: np.array = t * np.random.choice(
         arrival["option"], size=n, p=arrival["prob"]
     ).astype(int)
@@ -35,7 +43,6 @@ def _job_generate(n: int, r: int, t: int, max_usage: float, arrival: Dict[str, f
 
 
 class NodeGenerator(Protocol):
-
     @classmethod
     def generate(cls, n: int, r: int, t: int, max_usage: float) -> Nodes:
         return Nodes(_node_generate(n, r, t, max_usage))
@@ -48,21 +55,31 @@ class JobGenerator(Protocol):
 
     @classmethod
     def generate(cls, n: int, r: int, t: int, max_usage: float) -> Jobs:
-        return Jobs(*_job_generate(n, r, t, max_usage, length=cls.LENGTH, arrival=cls.ARRIVAL_TIME, usage=cls.USAGE))
+        return Jobs(
+            *_job_generate(
+                n,
+                r,
+                t,
+                max_usage,
+                length=cls.LENGTH,
+                arrival=cls.ARRIVAL_TIME,
+                usage=cls.USAGE,
+            )
+        )
 
 
 spec = [
-    ('nodes', float64[:, :, :]),
-    ('jobs', float64[:, :, :]),
-    ('_logger', float64),
-    ('_run_time', float64[:]),
-    ('_max_val', float64),
-    ('_time', int32)
+    ("nodes", float64[:, :, :]),
+    ("jobs", float64[:, :, :]),
+    ("_logger", float64),
+    ("_run_time", float64[:]),
+    ("_max_val", float64),
+    ("_time", int32),
 ]
+
 
 @jitclass(spec)
 class Cluster:
-
     def __init__(self, nodes, jobs):
         self.nodes = nodes
         self.jobs = jobs
@@ -144,8 +161,12 @@ class Cluster:
                 self.jobs[j_idx] = self.jobs[j_idx].change_status(JobStatus.RUNNING)
                 logging.debug(f"Succeed Allocated j.{j_idx} to n.{n_idx}")
             else:
-                logging.debug(f"Can't Allocate j.{j_idx} n.{n_idx}, not enough resource")
+                logging.debug(
+                    f"Can't Allocate j.{j_idx} n.{n_idx}, not enough resource"
+                )
             return job_can_be_schedule
         else:
-            logging.debug(f"Can't Allocate j.{j_idx} with status {JobStatus(job_status).name}")
+            logging.debug(
+                f"Can't Allocate j.{j_idx} with status {JobStatus(job_status).name}"
+            )
             return False

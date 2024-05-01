@@ -75,6 +75,10 @@ class Jobs(Sequence[T]):
     _length: npt.NDArray[int] = field(init=False)
     _run_time: npt.NDArray[int] = field(init=False)
     _wait_time: npt.NDArray[int] = field(init=False)
+    _job_node_mapper: npt.NDArray[int] = field(init=False)
+
+    def map_to_node(self, node_idx, job_idx):
+        self._job_node_mapper[job_idx] = node_idx
 
     @property
     def status(self) -> npt.NDArray[int]:
@@ -92,6 +96,7 @@ class Jobs(Sequence[T]):
         ).astype(np.uint32)
         self._run_time = np.zeros(len(self)).astype(int)
         self._wait_time = np.zeros(len(self)).astype(int)
+        self._job_node_mapper = np.full(len(self), -1).astype(int)
 
     def reorganize(self, mapping: npt.ArrayLike) -> None:
         self.submission = self.submission[mapping]
@@ -100,6 +105,7 @@ class Jobs(Sequence[T]):
         self._wait_time = self._wait_time[mapping]
         self._run_time = self._run_time[mapping]
         self._length = self._length[mapping]
+        self._job_node_mapper = self._job_node_mapper[mapping]
 
     def total_pending_time(self) -> int:
         return int(np.sum(self._wait_time))

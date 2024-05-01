@@ -1,6 +1,6 @@
-from clusterenv.common import NodeGenerator, JobGenerator
-from clusterenv.render import ClusterRenderer
-from clusterenv._types import Jobs, Nodes, JobStatus
+from _tmo.common import NodeGenerator, JobGenerator
+from _tmo.render import ClusterRenderer
+from _tmo.types import Jobs, Nodes, JobStatus
 from gymnasium.core import ActType, ObsType, RenderFrame
 from typing import List, Any, SupportsFloat, overload
 import gymnasium as gym
@@ -9,8 +9,7 @@ import logging
 
 
 class ClusterEnv(gym.Env):
-
-    metadata = {"render_modes": ["human", "rgb_array", ''], "render_fps": 4}
+    metadata = {"render_modes": ["human", "rgb_array", ""], "render_fps": 4}
 
     def _action_shape(self) -> gym.spaces.Discrete:
         return gym.spaces.Discrete(len(self.nodes) * len(self.jobs) + 1)
@@ -43,12 +42,16 @@ class ClusterEnv(gym.Env):
         n_jobs: int,
         n_resource: int,
         max_time: int,
+        max_episode_steps: int,
         node_gen: NodeGenerator = NodeGenerator,
         job_gen: JobGenerator = JobGenerator,
-        render_mode: str = '',
-        cooldown: float = 1e-5
+        render_mode: str = "",
+        cooldown: float = 1e-5,
     ):
         super(ClusterEnv, self).__init__()
+        self.max_episode_steps = max_episode_steps
+        self.max_episode_time = max_time * n_jobs
+        self._current_steps = 0
         self._time = 0
         self._mapper = np.arange(n_jobs)
         self.render_mode = render_mode
@@ -63,7 +66,7 @@ class ClusterEnv(gym.Env):
             resource=self._n_resource,
             time=self._max_time,
             cooldown=cooldown,
-            render_mode=render_mode
+            render_mode=render_mode,
         )
         self._action_error = None
         self._action_correct = None
@@ -77,7 +80,9 @@ class ClusterEnv(gym.Env):
         self.action_space = self._action_shape()
 
     def _reorganize_observation(self) -> None:
-        self._mapper = self._mapper[np.argsort(self.jobs.status[self._mapper], kind='stable')]
+        self._mapper = self._mapper[
+            np.argsort(self.jobs.status[self._mapper], kind="stable")
+        ]
         self.jobs.reorganize(self._mapper)
         # TODO: Update jobs
         self._observation = dict(
@@ -93,6 +98,7 @@ class ClusterEnv(gym.Env):
         """
         self._logger.debug(f"Tick {self._time}->{self._time + 1}")
         self.jobs.inc(JobStatus.RUNNING)
+        self.jobs.inc(JobStatus.PENDING)
         self._time += 1
         complete_jobs_idx: np.array = self.jobs.check_complete_jobs()
         arrived_jobs_idx: np.array = self.jobs.check_arrived_jobs(self._time)
@@ -108,19 +114,26 @@ class ClusterEnv(gym.Env):
                 if job_can_be_schedule := bool(np.all(free_n_space >= job_usage)):
                     self.nodes[n_idx] += job_usage
                     self.jobs[j_idx] = self.jobs[j_idx].change_status(JobStatus.RUNNING)
+                    self.jobs.map_to_node(j_idx, n_idx)
                     logging.debug(f"Succeed Allocated j.{j_idx} to n.{n_idx}")
                 else:
-                    logging.debug(f"Can't Allocate j.{j_idx} n.{n_idx}, not enough resource")
+                    logging.debug(
+                        f"Can't Allocate j.{j_idx} n.{n_idx}, not enough resource"
+                    )
                 return job_can_be_schedule
             case _:
-                logging.debug(f"Can't Allocate j.{j_idx} with status {JobStatus(job_status).name}")
+                logging.debug(
+                    f"Can't Allocate j.{j_idx} with status {JobStatus(job_status).name}"
+                )
                 return False
 
     @overload
-    def _convert_action(self, n_idx: int, j_idx: int) -> int: ...
+    def _convert_action(self, n_idx: int, j_idx: int) -> int:
+        ...
 
     @overload
-    def _convert_action(self, action: int) -> tuple[int, int]: ...
+    def _convert_action(self, action: int) -> tuple[int, int]:
+        ...
 
     def _convert_action(self, *args):
         n_nodes: int = len(self.nodes)
@@ -153,7 +166,6 @@ class ClusterEnv(gym.Env):
                 correct=self._action_correct,
             )
             if self.render_mode == "rgb_array":
-
                 buf = fig.canvas.tostring_rgb()
                 width, height = fig.canvas.get_width_height()
                 expected_height = int(fig.get_figheight() * fig.dpi)
@@ -165,8 +177,13 @@ class ClusterEnv(gym.Env):
                 )
 
     def reset(
-            self, *, seed: int | None = None, options: dict[str, Any] | None = None
+        self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[Any, dict[str, Any]]:
+        self._current_steps = 0
+        self._time = 0
+        self._mapper = np.arange(self._n_jobs)
+        self._action_error = None
+        self._action_correct = None
         self.nodes: Nodes = self._node_gen.generate(
             self._n_nodes, self._n_resource, self._max_time, 255.0
         )
@@ -176,6 +193,7 @@ class ClusterEnv(gym.Env):
         self.jobs.check_arrived_jobs(self._time)
         self._reorganize_observation()
         self.render()
+        self.prev = 0
         return self._observation, {}
 
     def step(
@@ -192,6 +210,7 @@ class ClusterEnv(gym.Env):
         self._action_error = None
         self._action_correct = None
         self.render()
+        reward = -self._total_wait_time()
         if bool(action == 0):
             self._logger.debug(f"Tick Cluster ...")
             self._tick()
@@ -201,9 +220,18 @@ class ClusterEnv(gym.Env):
                 self._action_error = (n_idx, j_idx)
             else:
                 self._action_correct = (n_idx, j_idx)
+                reward += 1
         terminate: bool = self._has_terminate()
         truncated: bool = not self._has_additional_jobs()
-        reward: float = -self._total_wait_time()
         self._reorganize_observation()
         self.render()
+        if (
+            self._current_steps > self.max_episode_steps
+            or self._time > self.max_episode_time
+        ):
+            terminate = truncated = True
+        self._current_steps += 1
         return self._observation, reward, terminate, truncated, info
+
+    def close(self):
+        self._plotter.close()

@@ -1,4 +1,4 @@
-from clusterenv._types import JobStatus
+from _tmo.types import JobStatus
 from typing import Iterable, Callable, Any
 from dataclasses import dataclass, field
 from matplotlib.figure import Figure
@@ -18,7 +18,7 @@ CORRECT_COLOR: str = "Greens"
 ERROR_TITLE_COLOR: str = "red"
 
 
-def _hide_unused(axs: Axes,  nodes: np.array, jobs: np.array, nodes_n_columns: int):
+def _hide_unused(axs: Axes, nodes: np.array, jobs: np.array, nodes_n_columns: int):
     nodes_to_remove: list = axs[:, :nodes_n_columns].flatten()[nodes:]
     jobs_to_remove: list = axs[:, nodes_n_columns:].flatten()[jobs:]
     for ax in nodes_to_remove:
@@ -106,6 +106,7 @@ def color_map(error, correct):
         elif correct and idx == correct[pos]:
             return CORRECT_COLOR
         return REGULAR_COLOR
+
     return inner
 
 
@@ -130,12 +131,11 @@ class ClusterRenderer:
     cooldown: float
     fig: Figure = field(init=False)
     axs: npt.NDArray = field(init=False)
-    render_mode: str = ''
+    render_mode: str = ""
 
     def __post_init__(self):
-        print(self.render_mode)
-        if self.render_mode != 'human':
-            plt.ioff()
+        # if self.render_mode != 'human':
+        #     print('HERE')
         self.jobs_n_columns: int = math.ceil(self.jobs**0.5)
         self.nodes_n_columns: int = math.ceil(self.nodes**0.5)
 
@@ -162,11 +162,11 @@ class ClusterRenderer:
         *,
         current_time: int,
         error: None | tuple[int, int],
-        correct: None | tuple[int, int]
+        correct: None | tuple[int, int],
     ) -> Any:
         self.fig.suptitle(f"Time: {current_time}", fontsize=16, fontweight="bold")
-        nodes: npt.NDArray = obs["Usage"]
-        queue: npt.NDArray = obs["Queue"]
+        nodes: npt.NDArray = obs["Usage"] * 255
+        queue: npt.NDArray = obs["Queue"] * 255
         status: npt.NDArray[np.uint32] = obs["Status"]
         cmap_color = color_map(error, correct)
         title_color: Callable[[int, int], str] = (
@@ -193,6 +193,8 @@ class ClusterRenderer:
                 cmap=cmap_color(n_idx, 0),
             )
         for j_idx, job in enumerate(queue):
+            if status[j_idx] == JobStatus.COMPLETE:
+                job = np.zeros(job.shape)
             _draw_job(
                 job,
                 title_color=title_color(j_idx, 1),
@@ -207,3 +209,6 @@ class ClusterRenderer:
         plt.draw()
         plt.pause(self.cooldown)
         return self.fig
+
+    def close(self):
+        plt.close(self.fig)
