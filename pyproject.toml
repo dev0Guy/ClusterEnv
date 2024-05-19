@@ -6,13 +6,18 @@ authors = ["dev0Guy <97923827+dev0Guy@users.noreply.github.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.9"
-gymnasium = "^0.29.1"
-numba = "^0.59.1"
+python = "^3.11"
 matplotlib = "3.8.2"
+gymnasium = {version = "0.28.0", extras = ["classic-contro"]}
+tianshou = "^1.0.0"
+wandb = "^0.17.0"
+moviepy = "^1.0.3"
+pygame = "^2.5.2"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.10.0"
+tianshou = "*"
+
 
 [build-system]
 requires = ["poetry-core"]
