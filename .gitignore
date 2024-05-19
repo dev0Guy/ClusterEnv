@@ -6,6 +6,7 @@ tmp
 video
 logs
 wandb
+.vscode
 
 # C extensions
 *.so
