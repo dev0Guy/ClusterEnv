@@ -30,8 +30,7 @@ class AbstractScheduler(ABC):
         return 1 + n_idx + j_idx * n_nodes
 
     @abstractmethod
-    def select(self, observation: dict[str, np.ndarray]):
-        ...
+    def select(self, observation: dict[str, np.ndarray]): ...
 
 
 class FirstComeFirstServed(AbstractScheduler):
@@ -64,7 +63,7 @@ class ShortestJobFirst(AbstractScheduler):
         )
         for j_idx in self.received_jobs(jobs):
             self.queue.append([j_idx, jobs_length[j_idx]])
-        print("-"*50)
+        print("-" * 50)
         print(f"{self.queue=}")
         if self.queue:
             queue = np.array(self.queue)

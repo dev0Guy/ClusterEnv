@@ -13,6 +13,7 @@ tianshou = "^1.0.0"
 wandb = "^0.17.0"
 moviepy = "^1.0.3"
 pygame = "^2.5.2"
+returns = "^0.22.0"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.10.0"
@@ -23,5 +24,7 @@ tianshou = "*"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.mypy]
-exclude = ["clusterenv"]
+[tool.ruff]
+# exclude = ["clusterenv"]
+# plugins = ["returns.contrib.mypy.returns_plugin"]
+unfixable = ["F841"]

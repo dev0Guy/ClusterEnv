@@ -1,28 +1,16 @@
-import clusterEnv
-import gymnasium as gym
-import tianshou as ts
-import torch.nn as nn
-from clusterEnv.algorithem import FirstComeFirstServed, ShortestJobFirst
-import torch
-import numpy as np
-
+from src.cluster.env import ClusterEnvironment
+import logging
 
 def main():
-    import time
 
-    n_jobs: int = 10
-    cluster = gym.make(
-        "cluster-v0", nodes=3, jobs=n_jobs, resource=2, time=8, render_mode="rgb_array"
-    )
-    observation, _ = cluster.reset()
+    logging.basicConfig(level=logging.INFO)
+    cluster = ClusterEnvironment(n_machines=3, n_jobs=10, n_resources=2, time=10)
+    cluster.reset()
     # algorithm = FirstComeFirstServed(n_jobs)
-    algorithm = ShortestJobFirst(n_jobs)
     for _ in range(50):
-        action = algorithm.select(observation)
-        observation, reward, terminate, trunced, _ = cluster.step(action)
-        # time.sleep(1)
-        if terminate:
-            break
+        action = 0
+        _ = cluster.step(action)
+        cluster.render()
 
 
 if __name__ == "__main__":
