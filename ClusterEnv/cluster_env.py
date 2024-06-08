@@ -1,10 +1,11 @@
 from dilation import Dailation, ActionType, Action
+from scheduler import Scheduler
 from tensorforce.environments import Environment
 from puller import PrometheusPuller
-from typing import List
+from typing import List, Callable
 import tensorflow as tf
+import numpy as np
 import math
-
 
 
 class CustomEnvironment(Environment):
@@ -18,16 +19,19 @@ class CustomEnvironment(Environment):
         url: str,
         node_number: int,
         metrics_names: List[str],
+        selector_func: Callable[[List[str]], str],
+        sched_name: str = 'DefaultScheduler'
     ):
         super().__init__()
-        self._shape = self.__calc_stae_shape(
-                nodes_n=node_number, metrics_n=metrics_names
-            )
+        self._cluster_shape = self.__calc_stae_shape(
+            nodes_n=node_number, metrics_n=metrics_names
+        )
         self._puller = PrometheusPuller(
             url=url,
             selected_metrics=metrics_names,
             desired_shape=self._shape,
         )
+        self._scheduler = Scheduler(name=sched_name,selector=selector_func)
         self._action_n = 10
 
     def states(self):
