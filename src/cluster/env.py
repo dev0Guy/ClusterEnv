@@ -42,6 +42,14 @@ class Jobs:
         )
         return len_by_resource.max(axis=-1)
 
+    def update_metrics(self):
+        self.wait_time[self.status == Status.Pending] += 1
+        self.run_time[self.status == Status.Running] += 1
+
+    def update_status(self, n_ticks: NonNegativeInt):
+        self.status[self.run_time == self.length] = Status.Complete
+        self.status[self.arrival_time == n_ticks] = Status.Pending
+
     def __post_init__(self):
         n_machines: PositiveInt = self.usage.shape[0]
         self.status = np.full(
@@ -131,6 +139,11 @@ class ClusterEnvironment(gym.Env):
     def is_trunced(self) -> bool:
         return all(self.jobs.status != Status.Running)
 
+    def machine_time_tick(self):
+        """Roll usage by one & set new values as 1"""
+        self.machines = np.roll(self.machines, -1, axis=-1)
+        self.machines[:, :, -1] = 1
+
     @validate_call
     def step(
         self, action: Tuple[MachineIndex, JobIndex, SkipTime]
@@ -139,15 +152,10 @@ class ClusterEnvironment(gym.Env):
         m_idx, j_idx, skip_operation = action
         if skip_operation:
             logging.info(f"Time tick: {self.n_ticks}s -> {self.n_ticks+1}s")
-            # change jobs status 
-            self.jobs.wait_time[self.jobs.status == Status.Pending] += 1
-            self.jobs.run_time[self.jobs.status == Status.Running] += 1
-            self.n_ticks += 1
-            self.jobs.status[self.jobs.run_time == self.jobs.length] = Status.Complete
-            self.jobs.status[self.jobs.arrival_time == self.n_ticks] = Status.Pending
-            # skip machine time 
-            self.machines = np.roll(self.machines, -1, axis=-1)
-            self.machines[:, :, -1] = 1
+            self.n_ticks +=  1
+            self.jobs.update_metrics()
+            self.jobs.update_status(self.n_ticks)
+            self.machine_time_tick()
         else:
             match self.schedule(m_idx, j_idx):
                 case Success(None):
@@ -180,6 +188,7 @@ class ClusterEnvironment(gym.Env):
         self.jobs.run_time[:] = 0
         self.jobs.wait_time[:] = 0
         self.jobs.status[self.jobs.arrival_time == 0] = Status.Pending
+        self.machines = np.ones(self.machines.shape)
         if self.render_mode == "human":
             self.render()
         return self.observation(), {}
