@@ -92,6 +92,7 @@ class ClusterEnvironment(gym.Env):
         self.jobs: npt.NDArray = np.ones((n_jobs, n_resources, time), dtype=np.float32)
         arrival_time: npt.NDArray = np.ones((n_machines,), dtype=np.int32)
         self.jobs: Jobs = Jobs(self.jobs, arrival_time=arrival_time)
+        # Initilize spaces
         self.action_space: spaces.Space = spaces.Tuple(
             (
                 spaces.Discrete(start=0, n=self.n_machines),
@@ -180,7 +181,6 @@ class ClusterEnvironment(gym.Env):
         self, *, seed: PositiveInt | None = None, options: dict[str, Any] | None = None
     ) -> Tuple[Any | dict[str, Any]]:
         super(ClusterEnvironment, self).reset(seed=seed, options=options)
-        # TODO: use seed
         self.n_ticks = 0
         self.jobs.status[:] = Status.NotArrived
         self.jobs.run_time[:] = 0
