@@ -7,17 +7,18 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-matplotlib = "3.8.2"
+# matplotlib = "3.8.2"
 gymnasium = {version = "0.28.0", extras = ["classic-contro"]}
-tianshou = "^1.0.0"
-wandb = "^0.17.0"
-moviepy = "^1.0.3"
+# tianshou = "^1.0.0"
+# wandb = "^0.17.0"
+# moviepy = "^1.0.3"
 pygame = "^2.5.2"
 returns = "^0.22.0"
+pydantic = "^2.7.3"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.10.0"
-tianshou = "*"
+# tianshou = "*"
 
 
 [build-system]

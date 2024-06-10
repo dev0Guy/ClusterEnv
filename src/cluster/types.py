@@ -1,20 +1,12 @@
-from pydantic import PositiveInt
+from pydantic import PositiveInt, NonNegativeInt
 from typing import Tuple, TypeAlias
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 
-Action: TypeAlias = Tuple[PositiveInt, PositiveInt]
+Action: TypeAlias = Tuple[NonNegativeInt, NonNegativeInt]
 
-class ScheduleError(ValueError):
-    def __init__(self, msg, *args, **kwargs):
-        super(ScheduleError, self).__init__(msg, *args, **kwargs)
-
-class ResourceError(ScheduleError):
-    def __init__(self, msg, *args, **kwargs):
-        super(ResourceError, self).__init__(msg, *args, **kwargs)
-
-class StatusError(ScheduleError):
-    def __init__(self, msg, *args, **kwargs):
-        super(StatusError, self).__init__(msg, *args, **kwargs)
+class ScheduleErrorType(StrEnum):
+    ResourceError: str = 'Not Enogh resource int machine'
+    StatusError: str = 'Scheduling a job can only be with "pending" status.'
 
 class Status(IntEnum):
     NotArrived = 0
