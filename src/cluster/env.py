@@ -92,11 +92,9 @@ class ClusterEnvironment(gym.Env):
         self.jobs: npt.NDArray = np.ones((n_jobs, n_resources, time), dtype=np.float32)
         arrival_time: npt.NDArray = np.ones((n_machines,), dtype=np.int32)
         self.jobs: Jobs = Jobs(self.jobs, arrival_time=arrival_time)
-        # TODO: check if works
-        # self.action_space: gym.Space = gym.spaces.Discrete(start=0, n=1 + (self.n_jobs * self.n_machines))
         self.action_space: spaces.Space = spaces.Tuple(
             (
-                spaces.Discrete(start=0, n=self.n_machines),  # for null action
+                spaces.Discrete(start=0, n=self.n_machines),
                 spaces.Discrete(start=0, n=self.n_jobs),
                 spaces.Discrete(start=0, n=2),
             )
