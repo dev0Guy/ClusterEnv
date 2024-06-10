@@ -1,12 +1,11 @@
 from pydantic import NonNegativeInt
-from typing import Tuple, TypeAlias
 from enum import IntEnum, StrEnum
 
 
-MachineIndex: TypeAlias = NonNegativeInt
-JobIndex: TypeAlias = NonNegativeInt
-SkipTime: TypeAlias = bool
-
+MachineIndex = NonNegativeInt
+JobIndex = NonNegativeInt
+SkipTime = bool
+ClusterTicks = NonNegativeInt
 
 class ScheduleErrorType(StrEnum):
     ResourceError: str = "Not Enogh resource int machine"

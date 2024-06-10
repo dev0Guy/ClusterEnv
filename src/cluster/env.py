@@ -1,7 +1,7 @@
 from returns.result import Success, Failure, Result
 from typing import SupportsFloat, Any, List, Tuple, Optional
 from pydantic import validate_call
-from pydantic import PositiveInt, NonNegativeInt
+from pydantic import PositiveInt
 from dataclasses import dataclass, field
 from gymnasium.core import RenderFrame
 import gymnasium as gym
@@ -15,12 +15,10 @@ from gymnasium.error import DependencyNotInstalled
 from gymnasium import spaces
 
 from .types import Status, ScheduleErrorType
-from .types import MachineIndex, JobIndex, SkipTime
+from .types import MachineIndex, JobIndex, SkipTime, ClusterTicks
 
 
 # Todo: change to numpy array , convert to type which are subsripable
-
-
 
 
 @dataclass
@@ -42,11 +40,13 @@ class Jobs:
         )
         return len_by_resource.max(axis=-1)
 
+    @validate_call
     def update_metrics(self):
         self.wait_time[self.status == Status.Pending] += 1
         self.run_time[self.status == Status.Running] += 1
 
-    def update_status(self, n_ticks: NonNegativeInt):
+    @validate_call
+    def update_status(self, n_ticks: ClusterTicks):
         self.status[self.run_time == self.length] = Status.Complete
         self.status[self.arrival_time == n_ticks] = Status.Pending
 
@@ -60,6 +60,25 @@ class Jobs:
         self.wait_time = np.zeros(shape=(n_machines,), dtype=np.int32)
         self.length = self.caculate_time_untill_completion(self.usage)
 
+
+class PyGameVisulizer:
+    CELL_SIZE = 50
+    MARGIN = 5
+    
+    def __init__(self) -> None:
+        # Initialize Pygame
+        self.screen = None
+        self.clock = None
+        self.WHITE = (255, 255, 255)
+        self.BLACK = (0, 0, 0)
+        self.RED = (255, 0, 0)
+        self.GREEN = (0, 255, 0)
+        self.DARK = (169, 169, 169)
+        self.WINDOW_WIDTH = (self.num_time_slots + 1) * (self.CELL_SIZE + self.MARGIN)
+        self.WINDOW_HEIGHT = (self.num_machines + 1) * (self.CELL_SIZE + self.MARGIN)
+
+    def visulize(self, machines: npt.NDArray, jobs: npt.NDArray):
+        pass
 
 class ClusterEnvironment(gym.Env):
     SKIP_TIME_ACTION: int = 0
@@ -85,7 +104,7 @@ class ClusterEnvironment(gym.Env):
         self.time: PositiveInt = time
         self.render_mode = render_mode
         # Initilize arguemts
-        self.n_ticks: NonNegativeInt = 0
+        self.n_ticks: ClusterTicks = 0
         self.machines: npt.NDArray = np.full(
             (n_machines, n_resources, time), fill_value=1, dtype=np.float32
         )
@@ -209,13 +228,18 @@ class ClusterEnvironment(gym.Env):
             )
         if self.screen is None:
             pygame.init()
-            if self.render_mode == "human":
-                pygame.display.init()
-                self.screen = pygame.display.set_mode(
-                    (self.screen_width, self.screen_height)
-                )
-        #     else:  # mode == "rgb_array"
-        #         self.screen = pygame.Surface((self.screen_width, self.screen_height))
-        # if self.clock is None:
-        #     self.clock = pygame.time.Clock()
+            match self.render_mode:
+                case "human":
+                    pygame.display.init()
+                    self.screen = pygame.display.set_mode(
+                        (self.screen_width, self.screen_height)
+                    )
+                case "rgb_array": 
+                    self.screen = pygame.Surface((self.screen_width, self.screen_height))
+                case _: 
+                    raise ValueError
+        if self.clock is None:
+            self.clock = pygame.time.Clock()
+        
+
         return None
