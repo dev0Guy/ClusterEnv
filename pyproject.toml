@@ -15,10 +15,12 @@ gymnasium = {version = "0.28.0", extras = ["classic-contro"]}
 pygame = "^2.5.2"
 returns = "^0.22.0"
 pydantic = "^2.7.3"
+annotated-types = "^0.7.0"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.10.0"
 # tianshou = "*"
+black = "^24.4.2"
 
 
 [build-system]

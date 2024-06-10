@@ -17,14 +17,13 @@ class ConcatenateObservationDict(gym.ObservationWrapper):
     """
 
     def observation(self, observation: ObsType) -> WrapperObsType:
-        return np.concatenate(
-            (observation["Nodes"], observation["Jobs"]),
-            axis=0
-        )
+        return np.concatenate((observation["Nodes"], observation["Jobs"]), axis=0)
 
     def __init__(self, env: gym.Env):
         super().__init__(env)
         nodes: gym.spaces.Box = self.observation_space["Nodes"]
         jobs: gym.spaces.Box = self.observation_space["Jobs"]
         num_c: int = nodes.shape[0] + jobs.shape[0]
-        self.observation_space =  gym.spaces.Box(low=-1, high=1, shape=(num_c, *jobs.shape[1:]))
+        self.observation_space = gym.spaces.Box(
+            low=-1, high=1, shape=(num_c, *jobs.shape[1:])
+        )

@@ -1,24 +1,27 @@
 from returns.result import Success, Failure, Result
 from typing import SupportsFloat, Any, List, Tuple, Optional
 from pydantic import validate_call
-from pydantic import (
-    PositiveInt,
-    NonNegativeInt
-)
+from pydantic import PositiveInt, NonNegativeInt
 from dataclasses import dataclass, field
 from gymnasium.core import RenderFrame
 import gymnasium as gym
 import logging
 
 import numpy as np
-import numpy.typing as npt 
-from .types import Status, Action, ScheduleErrorType
+import numpy.typing as npt
+
 
 from gymnasium.error import DependencyNotInstalled
+from gymnasium import spaces
+
+from .types import Status, ScheduleErrorType
+from .types import MachineIndex, JobIndex, SkipTime
+
+
+# Todo: change to numpy array , convert to type which are subsripable
 
 
 
-# Todo: change to numpy array , convert to type which are subsripable 
 
 @dataclass
 class Jobs:
@@ -31,20 +34,24 @@ class Jobs:
 
     @classmethod
     def caculate_time_untill_completion(cls, usage: npt.NDArray) -> npt.NDArray:
-        assert len(usage.shape) == 3, f"Usage should be a 3d matrix, not {len(usage.shape)}d"
+        assert (
+            len(usage.shape) == 3
+        ), f"Usage should be a 3d matrix, not {len(usage.shape)}d"
         len_by_resource: npt.NDArray = usage.shape[-1] - np.argmax(
-            np.flip(usage, axis=-1),
-            axis=-1
+            np.flip(usage, axis=-1), axis=-1
         )
         return len_by_resource.max(axis=-1)
 
     def __post_init__(self):
         n_machines: PositiveInt = self.usage.shape[0]
-        self.status = np.full(fill_value=Status.Pending, shape=(n_machines,), dtype=np.int8)
-        self.arrival_time = np.ones(shape=(n_machines,), dtype=np.float32)
+        self.status = np.full(
+            fill_value=Status.Pending, shape=(n_machines,), dtype=np.int8
+        )
+        self.arrival_time = np.zeros(shape=(n_machines,), dtype=np.int32)
         self.run_time = np.zeros(shape=(n_machines,), dtype=np.int32)
         self.wait_time = np.zeros(shape=(n_machines,), dtype=np.int32)
         self.length = self.caculate_time_untill_completion(self.usage)
+
 
 class ClusterEnvironment(gym.Env):
     SKIP_TIME_ACTION: int = 0
@@ -60,10 +67,10 @@ class ClusterEnvironment(gym.Env):
         n_jobs: PositiveInt,
         n_resources: PositiveInt,
         time: PositiveInt,
-        render_mode: Optional[str] = None
+        render_mode: Optional[str] = None,
     ) -> None:
         super(ClusterEnvironment, self).__init__()
-        # Save arguments as attribute 
+        # Save arguments as attribute
         self.n_resources: PositiveInt = n_resources
         self.n_machines: PositiveInt = n_machines
         self.n_jobs: PositiveInt = n_jobs
@@ -75,38 +82,37 @@ class ClusterEnvironment(gym.Env):
             (n_machines, n_resources, time), fill_value=1, dtype=np.float32
         )
         self.jobs: npt.NDArray = np.ones((n_jobs, n_resources, time), dtype=np.float32)
-        arrival_time: npt.NDArray = np.ones((n_machines,) ,dtype=np.int32)
-        self.jobs: Jobs = Jobs(self.jobs, arrival_time=arrival_time)   
+        arrival_time: npt.NDArray = np.ones((n_machines,), dtype=np.int32)
+        self.jobs: Jobs = Jobs(self.jobs, arrival_time=arrival_time)
         # TODO: check if works
-        self.action_space: gym.Space = gym.spaces.Discrete(start=0, n=1 + (self.n_jobs * self.n_machines))
+        # self.action_space: gym.Space = gym.spaces.Discrete(start=0, n=1 + (self.n_jobs * self.n_machines))
+        self.action_space: spaces.Space = spaces.Tuple(
+            (
+                spaces.Discrete(start=0, n=self.n_machines),  # for null action
+                spaces.Discrete(start=0, n=self.n_jobs),
+                spaces.Discrete(start=0, n=2),
+            )
+        )
         self.shape_space: gym.Space = gym.spaces.Dict(
             spaces=dict(
                 machines=gym.spaces.Box(low=0, high=1, shape=self.machines.shape),
                 jobs=gym.spaces.Box(low=0, high=1, shape=self.jobs.usage.shape),
-                status=gym.spaces.Discrete(start=int(Status.NotArrived), n=int(Status.Complete)+1),
-                time=gym.spaces.Discrete(start=0, n=10_000)
+                status=gym.spaces.Discrete(
+                    start=int(Status.NotArrived), n=int(Status.Complete) + 1
+                ),
+                time=gym.spaces.Discrete(start=0, n=10_000),
             )
         )
 
     @validate_call
-    def convert_action(self, action: NonNegativeInt) -> Action:
-        err_msg: str = f"{action!r} ({type(action)}) invalid"
-        assert self.action_space.contains(action), err_msg
-        action -= 1
-        n_machines: NonNegativeInt = self.machines.shape[0]
-        job_idx: NonNegativeInt = action % n_machines
-        node_idx: NonNegativeInt = action // n_machines
-        return (job_idx, node_idx)
-
-    @validate_call
-    def schedule(self, m_idx: NonNegativeInt, j_idx: NonNegativeInt) -> Result[None, str]:
+    def schedule(self, m_idx: MachineIndex, j_idx: JobIndex) -> Result[None, str]:
         if self.jobs.status[m_idx] != Status.Pending:
             return Failure(ScheduleErrorType.StatusError)
-        
+
         after_allocation: npt.NDArray = self.machines[m_idx] - self.jobs.usage[j_idx]
         if not np.all(after_allocation >= 0):
             return Failure(ScheduleErrorType.ResourceError)
-        
+
         self.machines[m_idx] -= self.jobs.usage[j_idx]
         self.jobs.status[j_idx] = Status.Running
         return Success(None)
@@ -116,54 +122,68 @@ class ClusterEnvironment(gym.Env):
             machines=self.machines,
             jobs=self.jobs.usage,
             status=self.jobs.status,
-            time=self.n_ticks
+            time=self.n_ticks,
         )
-    
+
     def is_complete(self) -> bool:
-        return all(self.jobs.status == Status.Complete) 
-    
+        return all(self.jobs.status == Status.Complete)
+
     def is_trunced(self) -> bool:
         return all(self.jobs.status != Status.Running)
 
-    def step(self, action: NonNegativeInt) -> Tuple[Any | SupportsFloat | bool | dict[str, Any]]:
-        reward: float  = 0
-        if action is self.SKIP_TIME_ACTION:
+    @validate_call
+    def step(
+        self, action: Tuple[MachineIndex, JobIndex, SkipTime]
+    ) -> Tuple[Any | SupportsFloat | bool | dict[str, Any]]:
+        reward: float = 0
+        m_idx, j_idx, skip_operation = action
+        if skip_operation:
             logging.info(f"Time tick: {self.n_ticks}s -> {self.n_ticks+1}s")
+            # change jobs status 
             self.jobs.wait_time[self.jobs.status == Status.Pending] += 1
             self.jobs.run_time[self.jobs.status == Status.Running] += 1
             self.n_ticks += 1
             self.jobs.status[self.jobs.run_time == self.jobs.length] = Status.Complete
             self.jobs.status[self.jobs.arrival_time == self.n_ticks] = Status.Pending
-        else:     
-            m_idx, j_idx = self.convert_action(action)
+            # skip machine time 
+            self.machines = np.roll(self.machines, -1, axis=-1)
+            self.machines[:, :, -1] = 1
+        else:
             match self.schedule(m_idx, j_idx):
                 case Success(None):
                     logging.info(f"Allocating job '{j_idx}' to machine '{m_idx}'")
                     reward += 1
                 case Failure(ScheduleErrorType.StatusError):
-                    logging.warning(f"Can't allocate job: {j_idx} with status '{self.jobs.status[m_idx].name}'.")
+                    logging.warning(
+                        f"Can't allocate job: {j_idx} with status '{Status(self.jobs.status[m_idx]).name}'."
+                    )
                     reward -= 1
                 case Failure(ScheduleErrorType.ResourceError):
-                    logging.warning(f"Can't allocate job {j_idx} into {m_idx}, not enogh resource.")
+                    logging.warning(
+                        f"Can't allocate job {j_idx} into {m_idx}, not enogh resource."
+                    )
                     reward -= 1
-                case _: 
+                case _:
                     logging.error("Unexpected Error!")
-                    raise ValueError 
-        if self.render_mode == 'human':
+                    raise ValueError
+        if self.render_mode == "human":
             self.render()
         return self.observation(), reward, self.is_trunced(), self.is_complete(), {}
 
-    def reset(self, *, seed: PositiveInt | None = None, options: dict[str, Any] | None = None) -> Tuple[Any | dict[str, Any]]:
-        # TODO: use seed 
+    def reset(
+        self, *, seed: PositiveInt | None = None, options: dict[str, Any] | None = None
+    ) -> Tuple[Any | dict[str, Any]]:
+        super(ClusterEnvironment, self).reset(seed=seed, options=options)
+        # TODO: use seed
         self.n_ticks = 0
         self.jobs.status[:] = Status.NotArrived
         self.jobs.run_time[:] = 0
         self.jobs.wait_time[:] = 0
         self.jobs.status[self.jobs.arrival_time == 0] = Status.Pending
-        if self.render_mode == 'human':
+        if self.render_mode == "human":
             self.render()
         return self.observation(), {}
-    
+
     def render(self) -> RenderFrame | List[RenderFrame] | None:
         if self.render_mode is None:
             gym.logger.warn(
@@ -180,18 +200,15 @@ class ClusterEnvironment(gym.Env):
             raise DependencyNotInstalled(
                 "pygame is not installed, run `pip install gym[classic_control]`"
             )
-        # if self.screen is None: 
-        #     pygame.init()
-        #     if self.render_mode == "human":
-        #         pygame.display.init()
-        #         self.screen = pygame.display.set_mode(
-        #             (self.screen_width, self.screen_height)
-        #         )
+        if self.screen is None:
+            pygame.init()
+            if self.render_mode == "human":
+                pygame.display.init()
+                self.screen = pygame.display.set_mode(
+                    (self.screen_width, self.screen_height)
+                )
         #     else:  # mode == "rgb_array"
         #         self.screen = pygame.Surface((self.screen_width, self.screen_height))
         # if self.clock is None:
         #     self.clock = pygame.time.Clock()
-
         return None
-        
-    
