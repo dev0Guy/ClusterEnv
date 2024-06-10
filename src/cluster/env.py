@@ -25,7 +25,7 @@ from .types import MachineIndex, JobIndex, SkipTime, ClusterTicks
 class Jobs:
     usage: npt.NDArray
     arrival_time: npt.NDArray
-    status: Status = field(init=False)
+    status: npt.NDArray = field(init=False)
     run_time: npt.NDArray = field(init=False)
     wait_time: npt.NDArray = field(init=False)
     length: npt.NDArray = field(init=False)
