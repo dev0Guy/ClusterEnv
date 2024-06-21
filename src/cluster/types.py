@@ -22,8 +22,8 @@ class Status(IntEnum):
 
 
 class Color(StrEnum):
-    InCorrect = '#feca57'
-    Correct = '#00d2d3'
+    InCorrect = "#feca57"
+    Correct = "#00d2d3"
 
 
-ActionColor = Optional[Tuple[Tuple[MachineIndex,JobIndex], Color]]
+ActionColor = Optional[Tuple[Tuple[MachineIndex, JobIndex], Color]]

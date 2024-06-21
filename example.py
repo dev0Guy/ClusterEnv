@@ -6,6 +6,7 @@ import math
 import time
 import numpy.typing as npt
 
+
 class PyGameVisulizer:
     _BACKGROUND_WINDOW_COLOR: str = "#1E1E1E"
     _SLOT_SPACING: int = 10
@@ -16,14 +17,14 @@ class PyGameVisulizer:
     _CELL_SPACING: int = 4
     _SLOT_BORDER: int = 5
     _TIME_FONT_SIZE: int = 20
-    
+
     def __init__(self, machines_shape: npt.ArrayLike, jobs_shape: npt.ArrayLike):
         assert (
             len(machines_shape) == len(jobs_shape) == 3
         ), "Jobs/Machine number of dim should be 3."
         self.extract_information_for_build(machines_shape, jobs_shape)
         pygame.init()
-        self.title_font = pygame.font.Font(None,self._TIME_FONT_SIZE)
+        self.title_font = pygame.font.Font(None, self._TIME_FONT_SIZE)
         self.font = pygame.font.Font(None, min(self.tile_size) // 4)
         self.screen = pygame.display.set_mode(self._SCREEN_SIZE)
         pygame.display.set_caption(self._TITLE)
@@ -58,10 +59,12 @@ class PyGameVisulizer:
             math.floor(self.slot_size[1] / machines_shape[1]) - self._CELL_SPACING,
         )
         _togther_size = (
-            (self.tile_size[0] + self._CELL_SPACING) * machines_shape[2] - self._CELL_SPACING,
-            (self.tile_size[1] + self._CELL_SPACING) * machines_shape[1] - self._CELL_SPACING
+            (self.tile_size[0] + self._CELL_SPACING) * machines_shape[2]
+            - self._CELL_SPACING,
+            (self.tile_size[1] + self._CELL_SPACING) * machines_shape[1]
+            - self._CELL_SPACING,
         )
-        self.slot_padding = ( self.slot_size - _togther_size) // 2
+        self.slot_padding = (self.slot_size - _togther_size) // 2
 
     @staticmethod
     def interpolate_color(color1, color2, factor):
@@ -100,16 +103,21 @@ class PyGameVisulizer:
                 self.screen, self._SLOT_BACKGROUND_COLOR, (*spacing, *self.slot_size)
             )
             pygame.draw.rect(
-                self.screen, self._SLOT_BACKGROUND_COLOR, (*spacing, *self.slot_size), self._SLOT_BORDER
+                self.screen,
+                self._SLOT_BACKGROUND_COLOR,
+                (*spacing, *self.slot_size),
+                self._SLOT_BORDER,
             )
             for r_idx in range(matrix.shape[0]):
                 for c_idx in range(matrix.shape[1]):
                     cx_space = (
-                        self.slot_padding[0] + spacing[0]
+                        self.slot_padding[0]
+                        + spacing[0]
                         + (self.tile_size[0] + self._CELL_SPACING) * c_idx
                     )
                     cy_space = (
-                        self.slot_padding[1] + spacing[1]
+                        self.slot_padding[1]
+                        + spacing[1]
                         + (self.tile_size[1] + self._CELL_SPACING) * r_idx
                     )
                     rect = pygame.draw.rect(
@@ -126,7 +134,12 @@ class PyGameVisulizer:
     def draw(self, machines: npt.NDArray, jobs: npt.NDArray, time: int):
         self.screen.fill(self._BACKGROUND_WINDOW_COLOR)  # Clear the screen
         title_surface = self.title_font.render(f"Time: {time}", True, "white")
-        title_rect = title_surface.get_rect(center=(self._SCREEN_SIZE[0] // 2, self._SCREEN_SIZE[1] - self._OUTER_SPACING[1]))
+        title_rect = title_surface.get_rect(
+            center=(
+                self._SCREEN_SIZE[0] // 2,
+                self._SCREEN_SIZE[1] - self._OUTER_SPACING[1],
+            )
+        )
         self.screen.blit(title_surface, title_rect)
         self.draw_single(
             machines,
@@ -144,15 +157,20 @@ class PyGameVisulizer:
         self.previous_jobs = jobs.copy()
         pygame.display.flip()
 
+
 class CustomEnv(gym.Env):
     def __init__(self):
         super(CustomEnv, self).__init__()
         self.jobs = np.random.rand(7, 3, 8)
         self.machines = np.random.rand(7, 3, 8)
-        self.visualizer = PyGameVisulizer(machines_shape=self.machines.shape, jobs_shape=self.jobs.shape)
+        self.visualizer = PyGameVisulizer(
+            machines_shape=self.machines.shape, jobs_shape=self.jobs.shape
+        )
         # Define action and observation space
         self.action_space = spaces.Discrete(10)  # Example action space
-        self.observation_space = spaces.Box(low=0, high=1, shape=self.jobs.shape, dtype=np.float32)
+        self.observation_space = spaces.Box(
+            low=0, high=1, shape=self.jobs.shape, dtype=np.float32
+        )
 
     def reset(self):
         self.jobs = np.random.rand(7, 3, 8)
@@ -170,12 +188,14 @@ class CustomEnv(gym.Env):
 
         return self.jobs, reward, done, info
 
-    def render(self, mode='human'):
+    def render(self, mode="human"):
         import random
-        self.visualizer.draw(self.machines, self.jobs, time=random.randint(0,10))
+
+        self.visualizer.draw(self.machines, self.jobs, time=random.randint(0, 10))
 
     def close(self):
         pygame.quit()
+
 
 # To run the environment
 if __name__ == "__main__":

@@ -2,10 +2,13 @@ from src.cluster.env import ClusterEnvironment
 import logging
 import time
 
+
 def main():
 
     logging.basicConfig(level=logging.INFO)
-    cluster = ClusterEnvironment(n_machines=3, n_jobs=10, n_resources=3, time=10, render_mode='human')
+    cluster = ClusterEnvironment(
+        n_machines=3, n_jobs=10, n_resources=3, time=10, render_mode="human"
+    )
     cluster.reset()
     # algorithm = FirstComeFirstServed(n_jobs)
     action = [1, 0, 0]

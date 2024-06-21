@@ -19,6 +19,7 @@ from .types import MachineIndex, JobIndex, SkipTime, ClusterTicks, ActionColor, 
 import pygame
 import math
 from enum import Enum
+
 # TODO: visulize error of action
 # TODO: visilize selection and time skip
 
@@ -33,15 +34,17 @@ class PyGameVisulizer:
     _CELL_SPACING: int = 4
     _SLOT_BORDER: int = 5
     _TIME_FONT_SIZE: int = 20
-    
-    def __init__(self, machines_shape: npt.ArrayLike, jobs_shape: npt.ArrayLike, screen):
+
+    def __init__(
+        self, machines_shape: npt.ArrayLike, jobs_shape: npt.ArrayLike, screen
+    ):
         assert (
             len(machines_shape) == len(jobs_shape) == 3
         ), "Jobs/Machine number of dim should be 3."
         self.extract_information_for_build(machines_shape, jobs_shape)
-        self.title_font = pygame.font.Font(None,self._TIME_FONT_SIZE)
+        self.title_font = pygame.font.Font(None, self._TIME_FONT_SIZE)
         self.font = pygame.font.Font(None, min(self.tile_size) // 4)
-        self.screen = screen            
+        self.screen = screen
         # pygame.display.set_caption(self._TITLE)
         self.screen.fill(self._BACKGROUND_WINDOW_COLOR)
         self.previous_machines = np.zeros(machines_shape)
@@ -74,10 +77,12 @@ class PyGameVisulizer:
             math.floor(self.slot_size[1] / machines_shape[1]) - self._CELL_SPACING,
         )
         _togther_size = (
-            (self.tile_size[0] + self._CELL_SPACING) * machines_shape[2] - self._CELL_SPACING,
-            (self.tile_size[1] + self._CELL_SPACING) * machines_shape[1] - self._CELL_SPACING
+            (self.tile_size[0] + self._CELL_SPACING) * machines_shape[2]
+            - self._CELL_SPACING,
+            (self.tile_size[1] + self._CELL_SPACING) * machines_shape[1]
+            - self._CELL_SPACING,
         )
-        self.slot_padding = ( self.slot_size - _togther_size) // 2
+        self.slot_padding = (self.slot_size - _togther_size) // 2
 
     @staticmethod
     def interpolate_color(color1, color2, factor):
@@ -102,11 +107,13 @@ class PyGameVisulizer:
             for c_idx in range(matrix.shape[1]):
                 value = matrix[r_idx, c_idx]
                 cx_space = (
-                    self.slot_padding[0] + spacing[0]
+                    self.slot_padding[0]
+                    + spacing[0]
                     + (self.tile_size[0] + self._CELL_SPACING) * c_idx
                 )
                 cy_space = (
-                    self.slot_padding[1] + spacing[1]
+                    self.slot_padding[1]
+                    + spacing[1]
                     + (self.tile_size[1] + self._CELL_SPACING) * r_idx
                 )
                 rect = pygame.draw.rect(
@@ -114,9 +121,7 @@ class PyGameVisulizer:
                     self.get_color(value),
                     (cx_space, cy_space, *self.tile_size),
                 )
-                text_surface = self.font.render(
-                    f"{value:.1f}", True, "black"
-                )
+                text_surface = self.font.render(f"{value:.1f}", True, "black")
                 text_rect = text_surface.get_rect(center=rect.center)
                 self.screen.blit(text_surface, text_rect)
 
@@ -139,28 +144,35 @@ class PyGameVisulizer:
                 self.screen, self._SLOT_BACKGROUND_COLOR, (*spacing, *self.slot_size)
             )
             pygame.draw.rect(
-                self.screen, self._SLOT_BACKGROUND_COLOR, (*spacing, *self.slot_size), self._SLOT_BORDER
+                self.screen,
+                self._SLOT_BACKGROUND_COLOR,
+                (*spacing, *self.slot_size),
+                self._SLOT_BORDER,
             )
             self.draw_cells(spacing=spacing, matrix=matrix)
 
-    def draw_single_slot(self, r_idx: int , c_idx: int, color: str):
+    def draw_single_slot(self, r_idx: int, c_idx: int, color: str):
         spacing = self.slot_size + self._SLOT_SPACING
         spacing[0] *= c_idx
         spacing[1] *= r_idx
-        spacing +=  self._OUTER_SPACING
-        pygame.draw.rect(
-            self.screen, color, (*spacing, *self.slot_size)
-        )
+        spacing += self._OUTER_SPACING
+        pygame.draw.rect(self.screen, color, (*spacing, *self.slot_size))
         pygame.draw.rect(
             self.screen, color, (*spacing, *self.slot_size), self._SLOT_BORDER
         )
         return spacing
 
-
-    def draw(self, machines: npt.NDArray, jobs: npt.NDArray, time: int, color: ActionColor):
+    def draw(
+        self, machines: npt.NDArray, jobs: npt.NDArray, time: int, color: ActionColor
+    ):
         self.screen.fill(self._BACKGROUND_WINDOW_COLOR)
         title_surface = self.title_font.render(f"Time: {time}", True, "white")
-        title_rect = title_surface.get_rect(center=(self._SCREEN_SIZE[0] // 2, self._SCREEN_SIZE[1] - self._OUTER_SPACING[1]))
+        title_rect = title_surface.get_rect(
+            center=(
+                self._SCREEN_SIZE[0] // 2,
+                self._SCREEN_SIZE[1] - self._OUTER_SPACING[1],
+            )
+        )
         self.screen.blit(title_surface, title_rect)
         self.draw_single(
             machines,
@@ -176,14 +188,21 @@ class PyGameVisulizer:
         )
         if color:
             (m_idx, j_idx), color = color
-            r_idx, c_idx = m_idx // self.n_machines_columns, 0 + m_idx % self.n_machines_columns
+            r_idx, c_idx = (
+                m_idx // self.n_machines_columns,
+                0 + m_idx % self.n_machines_columns,
+            )
             spacing = self.draw_single_slot(r_idx=r_idx, c_idx=c_idx, color=color)
             self.draw_cells(matrix=machines[m_idx], spacing=spacing)
-            r_idx, c_idx = j_idx // self.n_jobs_columns, self.n_machines_columns + j_idx % self.n_jobs_columns
+            r_idx, c_idx = (
+                j_idx // self.n_jobs_columns,
+                self.n_machines_columns + j_idx % self.n_jobs_columns,
+            )
             spacing = self.draw_single_slot(r_idx=r_idx, c_idx=c_idx, color=color)
             self.draw_cells(matrix=jobs[j_idx], spacing=spacing)
         self.previous_machines = machines.copy()
         self.previous_jobs = jobs.copy()
+
 
 @dataclass
 class Jobs:
@@ -225,7 +244,7 @@ class Jobs:
         self.length = self.caculate_time_untill_completion(self.usage)
 
 
-class ClusterEnvironment(gym.Env):    
+class ClusterEnvironment(gym.Env):
 
     metadata = {
         "render_modes": ["human", "rgb_array"],
@@ -314,7 +333,9 @@ class ClusterEnvironment(gym.Env):
     def step(
         self, action: Tuple[MachineIndex, JobIndex, SkipTime]
     ) -> Tuple[Any | SupportsFloat | bool | dict[str, Any]]:
-        assert self.action_space.contains(action), f"{action!r} ({type(action)}) invalid"
+        assert self.action_space.contains(
+            action
+        ), f"{action!r} ({type(action)}) invalid"
         reward: float = 0
         m_idx, j_idx, skip_operation = action
         if skip_operation:
@@ -366,7 +387,7 @@ class ClusterEnvironment(gym.Env):
     def close(self):
         pygame.quit()
 
-    def render(self, mode='human') -> RenderFrame | List[RenderFrame] | None:
+    def render(self, mode="human") -> RenderFrame | List[RenderFrame] | None:
         if self.render_mode is None:
             if self.spec:
                 gym.logger.warn(
@@ -375,7 +396,7 @@ class ClusterEnvironment(gym.Env):
                     f'e.g. gym.make("{self.spec.id}", render_mode="rgb_array")'
                 )
             return
-        
+
         try:
             import pygame
         except ImportError as e:
@@ -384,15 +405,21 @@ class ClusterEnvironment(gym.Env):
             ) from e
         if self.visulizer is None:
             pygame.init()
-            if self.render_mode == 'human':
-                screen =  pygame.display.set_mode(PyGameVisulizer._SCREEN_SIZE)
+            if self.render_mode == "human":
+                screen = pygame.display.set_mode(PyGameVisulizer._SCREEN_SIZE)
             else:
                 screen = pygame.Surface(PyGameVisulizer._SCREEN_SIZE)
-            self.visulizer = PyGameVisulizer(machines_shape=self.machines.shape, jobs_shape=self.jobs.usage.shape, screen=screen)
+            self.visulizer = PyGameVisulizer(
+                machines_shape=self.machines.shape,
+                jobs_shape=self.jobs.usage.shape,
+                screen=screen,
+            )
         if self.clock is None:
             self.clock = pygame.time.Clock()
 
-        self.visulizer.draw(self.machines, self.jobs.usage, self.n_ticks, color=self.action_color)
+        self.visulizer.draw(
+            self.machines, self.jobs.usage, self.n_ticks, color=self.action_color
+        )
 
         if self.render_mode == "human":
             pygame.event.pump()
@@ -400,5 +427,6 @@ class ClusterEnvironment(gym.Env):
             pygame.display.flip()
         else:
             return np.transpose(
-                np.array(pygame.surfarray.pixels3d(self.visulizer.screen)), axes=(1, 0, 2)
+                np.array(pygame.surfarray.pixels3d(self.visulizer.screen)),
+                axes=(1, 0, 2),
             )
