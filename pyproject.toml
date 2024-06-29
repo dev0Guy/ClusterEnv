@@ -7,27 +7,25 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-# matplotlib = "3.8.2"
-gymnasium = {version = "0.28.0", extras = ["classic-contro"]}
-# tianshou = "^1.0.0"
-# wandb = "^0.17.0"
-# moviepy = "^1.0.3"
-pygame = "^2.5.2"
-returns = "^0.22.0"
-pydantic = "^2.7.3"
-annotated-types = "^0.7.0"
+tianshou = "^1.0.0"
+returns = "^0.23.0"
+pydantic = "^2.7.4"
+pygame = "^2.6.0"
+moviepy = "^1.0.3"
+
 
 [tool.poetry.group.dev.dependencies]
-mypy = "^1.10.0"
-# tianshou = "*"
-black = "^24.4.2"
+black = {extras = ["d"], version = "^24.4.2"}
+wandb = "^0.17.3"
 
+[tool.black]
+line-length = 1100
+target-version = ['py312']
+include = '\.pyi?$'
+
+[tool.mypy]
+plugins = "pydantic.mypy"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-
-[tool.ruff]
-# exclude = ["clusterenv"]
-# plugins = ["returns.contrib.mypy.returns_plugin"]
-unfixable = ["F841"]

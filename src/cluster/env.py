@@ -5,7 +5,7 @@ from pydantic import PositiveInt
 from dataclasses import dataclass, field
 from gymnasium.core import RenderFrame
 import gymnasium as gym
-import logging
+# import logging
 
 import numpy as np
 import numpy.typing as npt
@@ -278,22 +278,17 @@ class ClusterEnvironment(gym.Env):
         self.visulizer = None
         self.clock = None
         self.action_color: ActionColor = None
-        # Initilize spaces
-        self.action_space: spaces.Space = spaces.Tuple(
-            (
-                spaces.Discrete(start=0, n=self.n_machines),
-                spaces.Discrete(start=0, n=self.n_jobs),
-                spaces.Discrete(start=0, n=2),
-            )
-        )
-        self.shape_space: gym.Space = gym.spaces.Dict(
+        self.action_space: spaces.Space = spaces.MultiDiscrete([self.n_machines, self.n_jobs, 2])
+        self.observation_space: gym.Space = gym.spaces.Dict(
             spaces=dict(
-                machines=gym.spaces.Box(low=0, high=1, shape=self.machines.shape),
-                jobs=gym.spaces.Box(low=0, high=1, shape=self.jobs.usage.shape),
-                status=gym.spaces.Discrete(
-                    start=int(Status.NotArrived), n=int(Status.Complete) + 1
+                machines=gym.spaces.Box(low=0, high=1, shape=self.machines.shape, dtype=float),
+                jobs=gym.spaces.Box(low=0, high=1, shape=self.jobs.usage.shape, dtype=float),
+                status=gym.spaces.MultiDiscrete(
+                    [int(Status.Complete) + 1] * self.n_jobs,
                 ),
-                time=gym.spaces.Discrete(start=0, n=10_000),
+                time=gym.spaces.MultiDiscrete(
+                    [1e4],
+                ),
             )
         )
 
@@ -315,7 +310,7 @@ class ClusterEnvironment(gym.Env):
             machines=self.machines,
             jobs=self.jobs.usage,
             status=self.jobs.status,
-            time=self.n_ticks,
+            time=np.array([self.n_ticks]),
         )
 
     def is_complete(self) -> bool:
@@ -339,32 +334,33 @@ class ClusterEnvironment(gym.Env):
         reward: float = 0
         m_idx, j_idx, skip_operation = action
         if skip_operation:
-            logging.info(f"Time tick: {self.n_ticks}s -> {self.n_ticks+1}s")
+            # logging.info(f"Time tick: {self.n_ticks}s -> {self.n_ticks+1}s")
             self.n_ticks += 1
             self.jobs.update_metrics()
             self.jobs.update_status(self.n_ticks)
             self.machine_time_tick()
             self.action_color = None
+            reward = - self.jobs.wait_time.sum()
         else:
             match self.schedule(m_idx, j_idx):
                 case Success(None):
                     self.action_color = ((m_idx, j_idx), Color.Correct)
-                    logging.info(f"Allocating job '{j_idx}' to machine '{m_idx}'")
+                    # logging.info(f"Allocating job '{j_idx}' to machine '{m_idx}'")
                     reward += 1
                 case Failure(ScheduleErrorType.StatusError):
                     self.action_color = ((m_idx, j_idx), Color.InCorrect)
-                    logging.warning(
-                        f"Can't allocate job: {j_idx} with status '{Status(self.jobs.status[m_idx]).name}'."
-                    )
+                    # logging.warning(
+                    #     f"Can't allocate job: {j_idx} with status '{Status(self.jobs.status[m_idx]).name}'."
+                    # )
                     reward -= 1
                 case Failure(ScheduleErrorType.ResourceError):
                     self.action_color = ((m_idx, j_idx), Color.InCorrect)
-                    logging.warning(
-                        f"Can't allocate job {j_idx} into {m_idx}, not enogh resource."
-                    )
+                    # logging.warning(
+                    #     f"Can't allocate job {j_idx} into {m_idx}, not enogh resource."
+                    # )
                     reward -= 1
                 case _:
-                    logging.error("Unexpected Error!")
+                    # logging.error("Unexpected Error!")
                     raise ValueError
         if self.render_mode == "human":
             self.render()
@@ -385,6 +381,7 @@ class ClusterEnvironment(gym.Env):
         return self.observation(), {}
 
     def close(self):
+        super().close()
         pygame.quit()
 
     def render(self, mode="human") -> RenderFrame | List[RenderFrame] | None:
