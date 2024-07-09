@@ -1,7 +1,7 @@
-from typing import Optional, Tuple
-from pydantic import NonNegativeInt
 from enum import IntEnum, StrEnum
+from typing import Optional, Tuple
 
+from pydantic import NonNegativeInt
 
 MachineIndex = NonNegativeInt
 JobIndex = NonNegativeInt
@@ -15,10 +15,10 @@ class ScheduleErrorType(StrEnum):
 
 
 class Status(IntEnum):
-    NotArrived = 0
     Pending = 1
     Running = 2
     Complete = 3
+    NotArrived = 4
 
 
 class Color(StrEnum):
